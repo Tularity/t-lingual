@@ -1,0 +1,33 @@
+# Build and dependency outputs
+/bin/
+/data/
+/frontend/dist/
+/frontend/node_modules/
+/coverage/
+*.out
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Runtime files
+*.db
+*.db-shm
+*.db-wal
+*.sock
+
+# Agent-local instructions, planning, and ad-hoc test artifacts are never
+# versioned in this project.
+/AGENTS.md
+/CLAUDE.md
+/docs/
+/test/
