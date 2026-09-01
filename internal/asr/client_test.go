@@ -127,6 +127,121 @@ func TestClientSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestSessionWaitTreatsTransportEOFAfterSuccessfulEndAsNormal(t *testing.T) {
+	t.Parallel()
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("POST /v1/sessions", func(response http.ResponseWriter, request *http.Request) {
+		var input StartRequest
+		_ = json.NewDecoder(request.Body).Decode(&input)
+		response.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(response).Encode(validStartResponse("end-eof", input.Audio))
+	})
+	handler.HandleFunc("GET /v1/sessions/end-eof/audio", func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			messageType, payload, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			if messageType != websocket.MessageText {
+				continue
+			}
+			var command map[string]string
+			_ = json.Unmarshal(payload, &command)
+			if command["type"] == "end" {
+				// asr-factory currently returns from its FastAPI WebSocket handler
+				// here without sending a WebSocket close frame.
+				return
+			}
+		}
+	})
+	handler.HandleFunc("DELETE /v1/sessions/end-eof", func(response http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(response).Encode(map[string]any{"closed": true})
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	base, _ := url.Parse(server.URL)
+	client, err := NewClient(base, "", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := client.Start(ctx, StartRequest{
+		Language: "auto", Audio: AudioSpec{Encoding: "pcm32f", SampleRate: 16_000, Channels: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.End(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Wait(); err != nil {
+		t.Fatalf("Wait after a successful End = %v, want nil", err)
+	}
+	if err := stream.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionWaitPreservesTransportEOFBeforeEnd(t *testing.T) {
+	t.Parallel()
+
+	releasePeer := make(chan struct{})
+	peerAccepted := make(chan struct{})
+	handler := http.NewServeMux()
+	handler.HandleFunc("POST /v1/sessions", func(response http.ResponseWriter, request *http.Request) {
+		var input StartRequest
+		_ = json.NewDecoder(request.Body).Decode(&input)
+		response.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(response).Encode(validStartResponse("early-eof", input.Audio))
+	})
+	handler.HandleFunc("GET /v1/sessions/early-eof/audio", func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		close(peerAccepted)
+		<-releasePeer
+		_ = connection.CloseNow()
+	})
+	handler.HandleFunc("DELETE /v1/sessions/early-eof", func(response http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(response).Encode(map[string]any{"closed": true})
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	base, _ := url.Parse(server.URL)
+	client, err := NewClient(base, "", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := client.Start(ctx, StartRequest{
+		Language: "auto", Audio: AudioSpec{Encoding: "pcm32f", SampleRate: 16_000, Channels: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-peerAccepted
+	close(releasePeer)
+	if err := stream.Wait(); err == nil || !strings.Contains(err.Error(), "EOF") {
+		t.Fatalf("Wait before End = %v, want transport EOF error", err)
+	}
+	if err := stream.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClientRejectsOversizedProviderEventBeforeBuffering(t *testing.T) {
 	t.Parallel()
 	handler := http.NewServeMux()

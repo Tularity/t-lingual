@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/descope/virtualwebauthn v1.0.5 // test only
 	github.com/go-webauthn/webauthn v0.17.4
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.57.0

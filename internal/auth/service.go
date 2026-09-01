@@ -153,6 +153,7 @@ type LoginResult struct {
 
 type pendingRegistration struct {
 	User               domain.User `json:"user"`
+	WebAuthnID         []byte      `json:"webAuthnId,omitempty"`
 	BrowserSessionID   string      `json:"browserSessionId,omitempty"`
 	CredentialName     string      `json:"credentialName"`
 	InviteDigest       []byte      `json:"inviteDigest"`
@@ -220,6 +221,7 @@ func (s *Service) BeginRegistration(ctx context.Context, input RegistrationInput
 	}
 	pending := pendingRegistration{
 		User:           user,
+		WebAuthnID:     append([]byte(nil), user.WebAuthnID...),
 		CredentialName: input.CredentialName,
 		InviteDigest:   digest[:],
 		InviteBucket:   s.keyring.InvitationBucket(input.InvitationCode),
@@ -457,7 +459,8 @@ func (s *Service) BeginCredentialAuthorizationForScope(
 		return BeginResult{}, fmt.Errorf("begin passkey authorization: %w", err)
 	}
 	pending := pendingRegistration{
-		User: user, BrowserSessionID: browserSessionID, AuthorizationScope: authorizationScope,
+		User: user, WebAuthnID: append([]byte(nil), user.WebAuthnID...),
+		BrowserSessionID: browserSessionID, AuthorizationScope: authorizationScope,
 	}
 	return s.persistCeremony(ctx, credentialAuthorization, sessionData, pending, nil, userID, browserSessionID, options)
 }
@@ -569,7 +572,10 @@ func (s *Service) BeginAddCredential(
 	if err != nil {
 		return BeginResult{}, err
 	}
-	pending := pendingRegistration{User: user, BrowserSessionID: browserSessionID, CredentialName: credentialName}
+	pending := pendingRegistration{
+		User: user, WebAuthnID: append([]byte(nil), user.WebAuthnID...),
+		BrowserSessionID: browserSessionID, CredentialName: credentialName,
+	}
 	return s.persistCeremony(ctx, credentialRegistration, sessionData, pending, nil, userID, browserSessionID, options)
 }
 
@@ -728,6 +734,17 @@ func (s *Service) consumeCeremony(ctx context.Context, token, expectedKind strin
 		if openErr != nil || json.Unmarshal(pendingJSON, &pending) != nil {
 			return store.WebAuthnCeremony{}, webauthn.SessionData{}, pendingRegistration{}, ErrCredentialData
 		}
+		// domain.User intentionally excludes its WebAuthn handle from JSON so it
+		// can never leak through an API response. Ceremony state therefore keeps
+		// an explicit encrypted copy and binds it to the independently encrypted
+		// SessionData before restoring it for go-webauthn. Missing or mismatched
+		// handles are corrupted ceremony state, never a reason to weaken the
+		// library's user/session ID check.
+		if pending.User.ID == "" || len(pending.WebAuthnID) == 0 || len(pending.WebAuthnID) > 64 ||
+			!bytes.Equal(pending.WebAuthnID, sessionData.UserID) {
+			return store.WebAuthnCeremony{}, webauthn.SessionData{}, pendingRegistration{}, ErrCredentialData
+		}
+		pending.User.WebAuthnID = append([]byte(nil), pending.WebAuthnID...)
 	}
 	return ceremony, sessionData, pending, nil
 }

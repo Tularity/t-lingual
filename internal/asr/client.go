@@ -329,6 +329,8 @@ type session struct {
 	events chan Event
 
 	writeMu  sync.Mutex
+	endMu    sync.Mutex
+	endSent  bool
 	errMu    sync.Mutex
 	readErr  error
 	readDone chan struct{}
@@ -356,7 +358,20 @@ func (s *session) ForceEndOfUtterance(ctx context.Context) error {
 
 func (s *session) Reset(ctx context.Context) error { return s.command(ctx, "reset_stream") }
 func (s *session) Ping(ctx context.Context) error  { return s.command(ctx, "ping") }
-func (s *session) End(ctx context.Context) error   { return s.command(ctx, "end") }
+
+func (s *session) End(ctx context.Context) error {
+	// asr-factory finishes an explicit end by closing the TCP/WebSocket stream
+	// without a WebSocket close frame. Keep the write and state transition
+	// ordered with readLoop so an EOF can only be normalized after the end frame
+	// was successfully handed to the connection.
+	s.endMu.Lock()
+	defer s.endMu.Unlock()
+	if err := s.command(ctx, "end"); err != nil {
+		return err
+	}
+	s.endSent = true
+	return nil
+}
 
 func (s *session) command(ctx context.Context, command string) error {
 	payload, err := json.Marshal(map[string]string{"type": command})
@@ -382,7 +397,8 @@ func (s *session) readLoop() {
 		typ, payload, err := s.conn.Read(s.ctx)
 		if err != nil {
 			status := websocket.CloseStatus(err)
-			if !errors.Is(err, context.Canceled) && status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway {
+			if !errors.Is(err, context.Canceled) && status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway &&
+				!(errors.Is(err, io.EOF) && s.endedSuccessfully()) {
 				s.setReadErr(fmt.Errorf("read ASR websocket: %w", err))
 			}
 			return
@@ -409,6 +425,12 @@ func (s *session) readLoop() {
 			return
 		}
 	}
+}
+
+func (s *session) endedSuccessfully() bool {
+	s.endMu.Lock()
+	defer s.endMu.Unlock()
+	return s.endSent
 }
 
 func validateEvent(event *Event) error {
