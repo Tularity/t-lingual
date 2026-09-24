@@ -1,0 +1,121 @@
+@layer tl.components {
+  .tl-skeleton {
+    /* Defaults live here so the inline custom properties the component writes
+     * only ever need to override, never to establish. An unset `--_w` falls
+     * back rather than resolving to the initial (invalid) value. */
+    --_w: 100%;
+    --_h: 1em;
+    --_radius: var(--tl-radius-sm);
+    --_base: var(--tl-surface-sunken);
+    /* The sweep is derived from the elevated surface, which is lighter than the
+     * sunken one in both themes — so the highlight reads as a highlight under
+     * dark mode instead of inverting into a dark band. */
+    --_sheen: color-mix(in oklab, var(--tl-surface-elevated) 70%, transparent);
+    /* A literal, not a token: every duration token carries --tl-motion-scale,
+     * and a loop that reads it speeds up under reduced motion instead of
+     * calming down. The preference is honoured below by stopping the sweep. */
+    --_duration: 1400ms;
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-3);
+    width: var(--_w);
+  }
+
+  .tl-skeleton__bar {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: var(--_h);
+    background: var(--_base);
+    border-radius: var(--_radius);
+    overflow: hidden;
+  }
+
+  /* -- Variants ------------------------------------------------------------
+   * `text` deliberately sizes in `em` and not in px: a skeleton standing in for
+   * a line of body copy has to move when the surrounding type scale or the
+   * user's browser font size moves, or the placeholder and the content it
+   * replaces are different heights and the layout jumps on load. */
+  .tl-skeleton[data-variant='text'] {
+    --_h: 0.72em;
+    --_radius: var(--tl-radius-xs);
+    /* The leading is carried by each bar's margin instead of the flex gap, so
+     * every line occupies a real 1.5em line box. A stack of bars then measures
+     * the same height as the paragraph it replaces and nothing below it moves
+     * when the content arrives. */
+    gap: 0;
+  }
+
+  .tl-skeleton[data-variant='text'] .tl-skeleton__bar {
+    margin-block: calc((var(--tl-leading-normal) * 1em - var(--_h)) / 2);
+  }
+
+  .tl-skeleton[data-variant='circle'] {
+    /* `auto` is what lets the aspect ratio decide the height; any explicit
+     * `height` prop overrides this and wins, which is the intended escape. */
+    --_h: auto;
+    --_radius: var(--tl-radius-round);
+  }
+
+  .tl-skeleton[data-variant='circle'] .tl-skeleton__bar {
+    /* Squares itself off the width, so an avatar placeholder needs one prop. */
+    aspect-ratio: 1;
+  }
+
+  .tl-skeleton[data-variant='rect'] {
+    --_h: 100px;
+    --_radius: var(--tl-radius-md);
+  }
+
+  .tl-skeleton__bar[data-last] {
+    width: 62%;
+  }
+
+  .tl-skeleton__bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--_sheen), transparent);
+    /* Translating a pseudo-element composites on the GPU; animating
+     * `background-position` on the bar itself repaints it every frame, and a
+     * table of twenty loading rows makes that difference visible. */
+    transform: translateX(-100%);
+    animation: tl-skeleton-sheen var(--_duration) var(--tl-ease-linear) infinite;
+  }
+
+  @keyframes tl-skeleton-sheen {
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Declared under a query rather than scaled by the multiplier tokens. A loop
+   * must not read --tl-motion-scale (halving its period doubles its rate), and
+   * this sweep is decoration, not a signal: it says nothing the flat tint does
+   * not already say. An endlessly repeating movement with no user control is
+   * the exact case WCAG 2.3.3 asks to remove, so it is removed. */
+  @media (prefers-reduced-motion: reduce) {
+    .tl-skeleton__bar::after {
+      display: none;
+    }
+  }
+
+  /* An infinite animation never reports finished, and `usePresence` waits on
+   * every animation in the subtree before it lets an overlay go — so a loading
+   * dialog dismissed mid-load would stay on screen until the exit backstop
+   * fired. Cancelled outright on the way out. The ancestor is pinned to a
+   * framework surface (`data-tl`) so a consumer's own `data-state` vocabulary
+   * cannot stop the sheen on a skeleton that is staying put. */
+  [data-tl][data-state='exiting'] .tl-skeleton__bar::after {
+    animation: none;
+  }
+
+  /* Forced colors drops `background-color`, which would leave the placeholders
+   * completely invisible and the layout looking empty rather than loading. */
+  @media (forced-colors: active) {
+    .tl-skeleton__bar {
+      border: 1px solid GrayText;
+    }
+  }
+}

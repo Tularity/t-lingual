@@ -1,5 +1,4 @@
-import type { ApiService } from './contracts'
-import { MockApi } from './mock'
+import type { ApiService, InterpretationSession, ViewerAccess, SessionShare, ShareInput, ProviderEndpoints, User } from './contracts'
 import { dispatchAuthSessionInvalid } from './sessionInvalid'
 
 export class ApiError extends Error {
@@ -8,6 +7,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code = 'request_failed',
     readonly details?: unknown,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -50,12 +50,18 @@ class HttpApi implements ApiService {
         response.status,
         code,
         error?.details,
+        response.headers.has('Retry-After') && Number.isFinite(Number(response.headers.get('Retry-After'))) ? Math.max(0,Number(response.headers.get('Retry-After'))) : undefined,
       )
     }
     return body as T
   }
 
+  site = {content:()=>this.request<import('./contracts').SiteContent>('/site-content')}
+
+  recognition = { capabilities: () => this.request<import('./contracts').RecognitionCapabilities>('/recognition/capabilities') }
+
   auth = {
+    code: (code:string) => this.request<import('./contracts').CodeResult>('/auth/code', {method:'POST',body:JSON.stringify({code})}),
     me: () => this.request<Awaited<ReturnType<ApiService['auth']['me']>>>('/auth/me'),
     loginBegin: () => this.request<Awaited<ReturnType<ApiService['auth']['loginBegin']>>>('/auth/login/begin', { method: 'POST', body: '{}' }),
     loginFinish: (ceremonyToken: string, credential: Parameters<ApiService['auth']['loginFinish']>[1]) => this.request<Awaited<ReturnType<ApiService['auth']['loginFinish']>>>('/auth/login/finish', { method: 'POST', headers: { 'X-WebAuthn-Ceremony': ceremonyToken }, body: JSON.stringify(credential) }),
@@ -76,15 +82,21 @@ class HttpApi implements ApiService {
   }
 
   sessions = {
-    list: (query: Parameters<ApiService['sessions']['list']>[0] = {}) => this.request<Awaited<ReturnType<ApiService['sessions']['list']>>>(`/sessions${queryString({ status: query.status, limit: query.limit, offset: query.offset })}`),
+    list: (query: Parameters<ApiService['sessions']['list']>[0] = {}) => this.request<Awaited<ReturnType<ApiService['sessions']['list']>>>(`/view/sessions${queryString({ status: query.status, limit: query.limit, offset: query.offset })}`),
     create: (input: Parameters<ApiService['sessions']['create']>[0]) => this.request<Awaited<ReturnType<ApiService['sessions']['create']>>>('/sessions', { method: 'POST', body: JSON.stringify(input) }),
-    get: (id: string) => this.request<Awaited<ReturnType<ApiService['sessions']['get']>>>(`/sessions/${encodeURIComponent(id)}`),
+    get: (id: string) => this.request<Awaited<ReturnType<ApiService['sessions']['get']>>>(`/view/sessions/${encodeURIComponent(id)}`),
     update: (id: string, input: Parameters<ApiService['sessions']['update']>[1]) => this.request<Awaited<ReturnType<ApiService['sessions']['update']>>>(`/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(input) }),
     remove: (id: string) => this.request<void>(`/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    segments: (id: string, query: Parameters<ApiService['sessions']['segments']>[1] = {}) => this.request<Awaited<ReturnType<ApiService['sessions']['segments']>>>(`/sessions/${encodeURIComponent(id)}/segments${queryString({ after: query.after, limit: query.limit })}`),
+    archive: (id: string) => this.request<InterpretationSession>(`/sessions/${encodeURIComponent(id)}/archive`, { method: 'POST' }),
+    unarchive: (id: string) => this.request<InterpretationSession>(`/sessions/${encodeURIComponent(id)}/archive`, { method: 'DELETE' }),
+    recognition: (id: string, recognitionLanguages: string[], diarization?: boolean) => this.request<InterpretationSession>(`/view/sessions/${encodeURIComponent(id)}/recognition`, {method:'PUT',body:JSON.stringify({recognitionLanguages,...(diarization !== undefined ? {diarization} : {})})}),
+    language: (id: string, targetLanguage: string) => this.request<ViewerAccess>(`/view/sessions/${encodeURIComponent(id)}/language`, { method: 'PUT', body: JSON.stringify({ targetLanguage }) }),
+    stopRecorder: (id: string) => this.request<void>(`/view/sessions/${encodeURIComponent(id)}/recording/stop`, { method: 'POST' }),
+    segments: (id: string, query: Parameters<ApiService['sessions']['segments']>[1] = {}) => this.request<Awaited<ReturnType<ApiService['sessions']['segments']>>>(`/view/sessions/${encodeURIComponent(id)}/segments${queryString({ atMs: query.atMs === undefined ? undefined : Math.floor(query.atMs), after: query.after, before: query.before, tail: query.tail ? 'true' : undefined, search: query.search, limit: query.limit })}`),
   }
 
   settings = {
+    updateInterface: (input:Pick<import('./contracts').UserSettings,'interfaceLanguage'|'themePreference'>)=>this.request<import('./contracts').UserSettings>('/settings/interface',{method:'PATCH',body:JSON.stringify(input)}),
     get: () => this.request<Awaited<ReturnType<ApiService['settings']['get']>>>('/settings'),
     update: (input: Parameters<ApiService['settings']['update']>[0]) => this.request<Awaited<ReturnType<ApiService['settings']['update']>>>('/settings', { method: 'PUT', body: JSON.stringify(input) }),
   }
@@ -96,7 +108,20 @@ class HttpApi implements ApiService {
 		registrationFinish: (ceremonyToken: string, credential: Parameters<ApiService['passkeys']['registrationFinish']>[1]) => this.request<Awaited<ReturnType<ApiService['passkeys']['registrationFinish']>>>('/passkeys/finish', { method: 'POST', headers: { 'X-WebAuthn-Ceremony': ceremonyToken }, body: JSON.stringify(credential) }),
 		remove: (authorizationToken: string, id: string) => this.request<void>(`/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'X-Passkey-Authorization': authorizationToken } }),
 	}
+  sharing = {
+    list: async (id: string) => (await this.request<{ items: SessionShare[] }>(`/sessions/${encodeURIComponent(id)}/shares`)).items,
+    create: (id: string, input: ShareInput) => this.request<SessionShare>(`/sessions/${encodeURIComponent(id)}/shares`, { method: 'POST', body: JSON.stringify(input) }),
+    update: (id: string, shareId: string, input: Pick<ShareInput, 'permission' | 'expiresAt'>) => this.request<SessionShare>(`/sessions/${encodeURIComponent(id)}/shares/${encodeURIComponent(shareId)}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    revoke: (id: string, shareId: string) => this.request<void>(`/sessions/${encodeURIComponent(id)}/shares/${encodeURIComponent(shareId)}`, { method: 'DELETE' }),
+    recipients: async (query: string) => (await this.request<{ items: Array<Pick<User, 'id' | 'username' | 'displayName'>> }>(`/share-recipients${queryString({ q: query })}`)).items,
+    redeem: (token: string, language: string) => this.request<{ sessionId: string }>('/share-access', { method: 'POST', body: JSON.stringify({ token, language }) }),
+  }
   admin = {
+    siteSettings:()=>this.request<import('./contracts').SiteSettings>('/admin/site-settings'),
+    updateSiteSettings:(authorizationToken:string,input:import('./contracts').SiteSettings)=>this.request<import('./contracts').SiteSettings>('/admin/site-settings',{method:'PUT',headers:{'X-Passkey-Authorization':authorizationToken},body:JSON.stringify(input)}),
+    createCode: (authorizationToken:string,input:import('./contracts').CreateCodeInput) => this.request<import('./contracts').CreatedCode>('/admin/codes', {method:'POST',headers:{'X-Passkey-Authorization':authorizationToken},body:JSON.stringify(input)}),
+    providers: () => this.request<ProviderEndpoints>('/admin/providers'),
+    updateProviders: (authorizationToken: string, input: ProviderEndpoints) => this.request<ProviderEndpoints>('/admin/providers', { method: 'PUT', headers: { 'X-Passkey-Authorization': authorizationToken }, body: JSON.stringify({ asrUrl: input.asrUrl, translatorUrl: input.translatorUrl }) }),
     invitations: async (query: Parameters<ApiService['admin']['invitations']>[0] = {}) => (await this.request<{ items: Awaited<ReturnType<ApiService['admin']['invitations']>> }>(`/admin/invitations${queryString({ limit: query.limit, offset: query.offset })}`)).items,
     createInvitation: (authorizationToken: string, input: Parameters<ApiService['admin']['createInvitation']>[1]) => this.request<Awaited<ReturnType<ApiService['admin']['createInvitation']>>>('/admin/invitations', { method: 'POST', headers: { 'X-Passkey-Authorization': authorizationToken }, body: JSON.stringify(input) }),
     revokeInvitation: (authorizationToken: string, id: string) => this.request<void>(`/admin/invitations/${encodeURIComponent(id)}/revoke`, { method: 'POST', headers: { 'X-Passkey-Authorization': authorizationToken } }),
@@ -105,10 +130,18 @@ class HttpApi implements ApiService {
     audit: async (query: Parameters<ApiService['admin']['audit']>[0] = {}) => (await this.request<{ items: Awaited<ReturnType<ApiService['admin']['audit']>> }>(`/admin/audit${queryString({ limit: query.limit, offset: query.offset })}`)).items,
   }
 
-  liveSocketUrl(sessionId: string) {
+  audio = {
+    list: (id: string) => this.request<Awaited<ReturnType<ApiService['audio']['list']>>>(`/view/sessions/${encodeURIComponent(id)}/audio`),
+    partUrl: (id: string, partId: string) => `${this.prefix}/view/sessions/${encodeURIComponent(id)}/audio/${encodeURIComponent(partId)}`,
+    bundleUrl: (id: string) => `${this.prefix}/sessions/${encodeURIComponent(id)}/bundle`,
+  }
+  eventsUrl(sessionId: string) { return `${this.prefix}/view/sessions/${encodeURIComponent(sessionId)}/events` }
+  liveSocketUrl(sessionId: string, takeover = false) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}${this.prefix}/sessions/${encodeURIComponent(sessionId)}/live`
+    return `${protocol}//${window.location.host}${this.prefix}/view/sessions/${encodeURIComponent(sessionId)}/record${takeover ? '?takeover=true' : ''}`
   }
 }
 
-export const api: ApiService = __TLINGUAL_DEVELOPMENT_MOCK__ ? new MockApi() : new HttpApi()
+// The compile-time development gate removes the entire dynamic import in a
+// production build, including seed creation and storage initialization.
+export const api: ApiService = __TLINGUAL_DEVELOPMENT_MOCK__ ? new (await import('./mock')).MockApi() : new HttpApi()

@@ -1,0 +1,150 @@
+@layer tl.components {
+  .tl-select {
+    /* The styling contract: every size and state below only reassigns these. */
+    --_h: 36px;
+    --_px: var(--tl-space-7);
+    --_fs: var(--tl-text-sm);
+    --_bg: var(--tl-field-bg);
+    --_fg: var(--tl-text);
+    --_border: var(--tl-field-border);
+    --_border-hover: var(--tl-field-border-hover);
+    --_chevron: var(--tl-text-muted);
+    --_radius: var(--tl-radius-md);
+    --_chevron-size: 1.15em;
+
+    position: relative;
+    display: inline-flex;
+    max-width: 100%;
+    /* The em units below (chevron size, reserved padding) resolve against this,
+     * so one size token drives the glyph and the gutter it needs. */
+    font-size: var(--_fs);
+    vertical-align: middle;
+  }
+
+  /* -- Size ---------------------------------------------------------------
+   * Heights match Button so a select and a button sit on the same baseline in
+   * a filter bar without either being nudged. */
+  .tl-select[data-size='xs'] { --_h: 24px; --_px: var(--tl-space-5); --_fs: var(--tl-text-xs); }
+  .tl-select[data-size='sm'] { --_h: 30px; --_px: var(--tl-space-6); --_fs: var(--tl-text-sm); }
+  .tl-select[data-size='md'] { --_h: 36px; --_px: var(--tl-space-7); --_fs: var(--tl-text-sm); }
+  .tl-select[data-size='lg'] { --_h: 44px; --_px: var(--tl-space-8); --_fs: var(--tl-text-md); }
+
+  .tl-select[data-full-width] {
+    display: flex;
+    width: 100%;
+  }
+
+  .tl-select__control {
+    /* Strips the UA arrow so the overlay below is the only one drawn. */
+    appearance: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: var(--_h);
+    /* The end gutter is the chevron's box plus its inset, so a longer option
+     * label ellipses rather than sliding under the glyph. */
+    padding-inline: var(--_px) calc(var(--_px) + var(--_chevron-size) + var(--tl-space-2));
+    font-size: inherit;
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-none);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--_radius);
+    cursor: pointer;
+
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-select__control:hover:not(:disabled) {
+    border-color: var(--_border-hover);
+  }
+
+  /* -- States ------------------------------------------------------------- */
+  .tl-select[data-invalid] {
+    /* `--tl-danger-border` is a tint meant to sit behind a fill; on its own it
+     * lands near 1.3:1 on the page and would fail SC 1.4.11 for a border that
+     * carries meaning. The solid role is the one strong enough to read. */
+    --_border: var(--tl-danger-fg);
+    --_border-hover: var(--tl-danger-fg);
+  }
+
+  .tl-select[data-disabled] {
+    --_bg: var(--tl-surface-disabled);
+    --_fg: var(--tl-text-disabled);
+    --_border: transparent;
+    --_chevron: var(--tl-text-disabled);
+  }
+
+  .tl-select__control:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Nothing chosen yet reads as quieter than a real answer. Driven by `:has`
+   * rather than by React state so an uncontrolled select stays uncontrolled —
+   * mirroring the value into state to style it is what forces every consumer
+   * into a controlled component for a colour change.
+   *
+   * `:not(:disabled)` is load-bearing: `:has()` takes its argument's
+   * specificity, so this rule sets `color` above anything driven by `--_fg` and
+   * an unanswered disabled select would otherwise read as merely subtle — and
+   * under forced colors it would lose `GrayText` altogether. */
+  .tl-select__control:not(:disabled):has(option[data-placeholder]:checked) {
+    color: var(--tl-text-subtle);
+    font-weight: var(--tl-weight-regular);
+  }
+
+  /* A multiple select is a list box: it has its own scroll height and there is
+   * nothing for a chevron to point at. */
+  .tl-select[data-multiple] .tl-select__control {
+    height: auto;
+    padding-inline-end: var(--_px);
+    white-space: normal;
+  }
+
+  /* Engines that render the popup with page styles (rather than as a native
+   * menu) otherwise inherit the control's weight and lose the group headings. */
+  .tl-select__control optgroup {
+    font-weight: var(--tl-weight-semibold);
+  }
+  .tl-select__control option {
+    font-weight: var(--tl-weight-regular);
+  }
+
+  .tl-select__chevron {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--_px);
+    display: flex;
+    align-items: center;
+    font-size: var(--_chevron-size);
+    color: var(--_chevron);
+    /* The overlay sits on top of the control, so without this it would swallow
+     * the click that opens the picker — the one thing the component exists for. */
+    pointer-events: none;
+    transition: var(--tl-transition-control);
+  }
+
+  /* Forced colors drops `background-color`, which is the only thing separating
+   * a disabled select from an active one here. */
+  @media (forced-colors: active) {
+    .tl-select__control {
+      border-color: CanvasText;
+    }
+    /* See Input: the invalid state rides on border colour, which this mode
+     * replaces, so the dash is what survives to carry it. */
+    .tl-select[data-invalid] .tl-select__control {
+      border-style: dashed;
+    }
+    .tl-select__control:disabled {
+      color: GrayText;
+      border-color: GrayText;
+    }
+    .tl-select[data-disabled] {
+      --_chevron: GrayText;
+    }
+  }
+}

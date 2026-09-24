@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   authorizationBegin: vi.fn(),
   authorizationFinish: vi.fn(),
   invitations: vi.fn(),
-  createInvitation: vi.fn(),
+  createCode: vi.fn(),
   revokeInvitation: vi.fn(),
   users: vi.fn(),
   updateUser: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock('../../api/client', () => ({
     passkeys: { authorizationBegin: mocks.authorizationBegin, authorizationFinish: mocks.authorizationFinish },
     admin: {
       invitations: mocks.invitations,
-      createInvitation: mocks.createInvitation,
+      createCode: mocks.createCode,
       revokeInvitation: mocks.revokeInvitation,
       users: mocks.users,
       updateUser: mocks.updateUser,
@@ -48,8 +48,8 @@ describe('administrative passkey step-up', () => {
     mocks.invitations.mockResolvedValue([existingInvitation])
     mocks.users.mockResolvedValue([currentUser, targetUser])
     mocks.audit.mockResolvedValue([])
-    mocks.createInvitation.mockResolvedValue({
-      invitation: { ...existingInvitation, id: 'inv_created' },
+    mocks.createCode.mockResolvedValue({
+      id:'inv_created',kind:'registration',notBefore:now,expiresAt:'2099-01-01T00:00:00Z',
       code: '123456',
     })
     mocks.revokeInvitation.mockResolvedValue(undefined)
@@ -68,17 +68,17 @@ describe('administrative passkey step-up', () => {
     render(<ToastProvider><AdminPage /></ToastProvider>)
 
     await user.click(await screen.findByRole('button', { name: 'Verify and generate' }))
-    await screen.findByRole('dialog', { name: 'Copy this invitation now' })
-    expect(mocks.createInvitation).toHaveBeenCalledWith('grant-1', { expiresInHours: 24 })
+    await screen.findByRole('dialog', { name: 'Copy this code now' })
+    expect(mocks.createCode).toHaveBeenCalledWith('grant-1', {kind:'registration',ttlSeconds:86400})
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    const existingRow = screen.getByText('inv_existing').closest('[role="listitem"]')
+    const existingRow = screen.getByText('Registration code 02').closest('[role="listitem"]')
     expect(existingRow).not.toBeNull()
     await user.click(within(existingRow as HTMLElement).getByRole('button', { name: 'Revoke' }))
     await user.click(screen.getByRole('button', { name: 'Verify and revoke' }))
     await waitFor(() => expect(mocks.revokeInvitation).toHaveBeenCalledWith('grant-2', 'inv_existing'))
 
-    await user.click(screen.getByRole('tab', { name: 'Users' }))
+    await user.click(screen.getByRole('tab', { name: 'People' }))
     await user.selectOptions(screen.getByRole('combobox', { name: 'Role for Target User' }), 'admin')
     await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith('grant-3', 'user_1', { role: 'admin' }))
 
@@ -87,7 +87,7 @@ describe('administrative passkey step-up', () => {
     await waitFor(() => expect(mocks.updateUser).toHaveBeenLastCalledWith('grant-4', 'user_1', { status: 'disabled' }))
 
     expect(mocks.authorizationBegin.mock.calls).toEqual([
-      ['admin:invitation:create:24'],
+      ['admin:code:create:324970af4c903c496087e8e76f982a6c8c8267a739ab322bcfe41da0fcbb7de5'],
       ['admin:invitation:revoke:inv_existing'],
       ['admin:user:update:user_1:admin:-'],
       ['admin:user:update:user_1:-:disabled'],
@@ -101,9 +101,23 @@ describe('administrative passkey step-up', () => {
     render(<ToastProvider><AdminPage /></ToastProvider>)
 
     await user.click(await screen.findByRole('button', { name: 'Verify and generate' }))
-    expect(await screen.findByText('Invitation wasn’t created')).toBeInTheDocument()
-    expect(mocks.createInvitation).not.toHaveBeenCalled()
-    expect(screen.getByText('inv_existing')).toBeInTheDocument()
-    expect(screen.queryByRole('dialog', { name: 'Copy this invitation now' })).not.toBeInTheDocument()
+    expect(await screen.findByText('Code could not be created')).toBeInTheDocument()
+    expect(mocks.createCode).not.toHaveBeenCalled()
+    expect(screen.getByText('Registration code 01')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Copy this code now' })).not.toBeInTheDocument()
+  })
+
+  it('filters invitation history without displaying internal invitation identifiers', async () => {
+    const user = userEvent.setup()
+    render(<ToastProvider><AdminPage /></ToastProvider>)
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Administration' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Access overview')).not.toBeInTheDocument()
+    expect(await screen.findByText('Registration code 01')).toBeInTheDocument()
+    expect(screen.queryByText('inv_existing')).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter invitations' }), 'used')
+    expect(screen.getByText('No invitations in this view')).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter invitations' }), 'active')
+    expect(screen.getByText('Registration code 01')).toBeInTheDocument()
   })
 })

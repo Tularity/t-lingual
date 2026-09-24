@@ -128,6 +128,31 @@ func TestHandlerInvitationLifecycleUsesSocketBootstrapActor(t *testing.T) {
 	}
 }
 
+func TestTrustedControlCreatesBoundLoginCodeWithoutWebPasskey(t *testing.T) {
+	handler, database := newControlTestHandler(t, DefaultMaxJSONBytes)
+	now := time.Now().UTC()
+	user := domain.User{ID: "usr_control_recovery", WebAuthnID: []byte("control-user"),
+		Username: "control-recovery", DisplayName: "Recovery", Role: domain.RoleUser,
+		Status: domain.UserActive, CreatedAt: now, UpdatedAt: now}
+	if err := database.CreateUser(context.Background(), user); err != nil {
+		t.Fatal(err)
+	}
+	response := controlRequest(handler, http.MethodPost, CodesPath,
+		`{"kind":"login","targetUserId":"usr_control_recovery","ttl":"10m"}`, "application/json")
+	if response.Code != http.StatusCreated || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("control code create = %d %s", response.Code, response.Body.String())
+	}
+	result := decodeTestResponse[CreateCodeResponse](t, response)
+	if result.Invitation.Kind != "login" || result.Invitation.TargetUserID != user.ID ||
+		!regexp.MustCompile(`^[0-9]{6}$`).MatchString(result.Code) {
+		t.Fatalf("control response = %#v", result)
+	}
+	stored, err := database.GetInvitationByID(context.Background(), result.Invitation.ID)
+	if err != nil || stored.TargetUserID != user.ID || stored.Kind != "login" || stored.UsedAt != nil {
+		t.Fatalf("stored control code = %#v %v", stored, err)
+	}
+}
+
 func TestInvitationCodeIsNotLogged(t *testing.T) {
 	handler, _ := newControlTestHandler(t, DefaultMaxJSONBytes)
 	var logs bytes.Buffer

@@ -16,10 +16,11 @@ const (
 )
 
 type beginRegistrationRequest struct {
-	InvitationCode string `json:"invitationCode"`
-	Username       string `json:"username"`
-	DisplayName    string `json:"displayName"`
-	CredentialName string `json:"credentialName,omitempty"`
+	InvitationCode     string `json:"invitationCode"`
+	RegistrationTicket string `json:"registrationTicket,omitempty"`
+	Username           string `json:"username"`
+	DisplayName        string `json:"displayName"`
+	CredentialName     string `json:"credentialName,omitempty"`
 }
 
 func (a *API) beginRegistration(response http.ResponseWriter, request *http.Request) error {
@@ -30,11 +31,20 @@ func (a *API) beginRegistration(response http.ResponseWriter, request *http.Requ
 	if err := webapi.DecodeJSON(response, request, a.config.MaxJSONBytes, &input); err != nil {
 		return err
 	}
+	if strings.TrimSpace(input.InvitationCode) != "" {
+		// Legacy direct-code registration shares the exact per-IP code budget.
+		// A ticket-only continuation has already passed code entry and does
+		// not spend another six-digit guessing attempt.
+		if err := a.rateLimitAuth(response, request, authCode); err != nil {
+			return err
+		}
+	}
 	result, err := a.auth.BeginRegistration(request.Context(), auth.RegistrationInput{
-		InvitationCode: input.InvitationCode,
-		Username:       input.Username,
-		DisplayName:    input.DisplayName,
-		CredentialName: input.CredentialName,
+		InvitationCode:     input.InvitationCode,
+		RegistrationTicket: input.RegistrationTicket,
+		Username:           input.Username,
+		DisplayName:        input.DisplayName,
+		CredentialName:     input.CredentialName,
 	})
 	if err != nil {
 		return err
@@ -103,9 +113,14 @@ func (a *API) finishAuthentication(response http.ResponseWriter, request *http.R
 	if err != nil {
 		return err
 	}
+	settings, err := a.store.GetUserSettings(request.Context(), result.User.ID)
+	if err != nil {
+		return err
+	}
 	a.setSessionCookie(response, result.SessionToken, result.Session.ExpiresAt)
 	webapi.WriteJSON(response, http.StatusOK, map[string]any{
-		"user": result.User,
+		"user":               result.User,
+		"onboardingComplete": settings.OnboardingComplete,
 		"session": map[string]any{
 			"expiresAt": result.Session.ExpiresAt,
 		},
@@ -113,9 +128,14 @@ func (a *API) finishAuthentication(response http.ResponseWriter, request *http.R
 	return nil
 }
 
-func (a *API) me(response http.ResponseWriter, _ *http.Request, current identity) error {
+func (a *API) me(response http.ResponseWriter, request *http.Request, current identity) error {
+	settings, err := a.store.GetUserSettings(request.Context(), current.User.ID)
+	if err != nil {
+		return err
+	}
 	webapi.WriteJSON(response, http.StatusOK, map[string]any{
-		"user": current.User,
+		"user":               current.User,
+		"onboardingComplete": settings.OnboardingComplete,
 		"session": map[string]any{
 			"createdAt": current.Session.CreatedAt,
 			"expiresAt": current.Session.ExpiresAt,

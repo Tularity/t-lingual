@@ -1,0 +1,164 @@
+@layer tl.components {
+  .tl-tag {
+    --_bg: var(--tl-surface-sunken);
+    --_fg: var(--tl-text-secondary);
+    --_border: var(--tl-border-subtle);
+    --_remove-hover-bg: var(--tl-surface-active);
+
+    --_h: 24px;
+    --_px: var(--tl-space-5);
+    --_fs: var(--tl-text-xs);
+
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tl-space-3);
+
+    height: var(--_h);
+    max-width: 100%;
+    padding-inline: var(--_px);
+    font-size: var(--_fs);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-none);
+    white-space: nowrap;
+    vertical-align: middle;
+
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    /* Softly rounded rather than a full pill: a Tag is a thing the user placed
+     * and can act on, and reserving the pill shape for the read-only Badge
+     * keeps "reports state" and "you put this here" visually apart. */
+    border-radius: var(--tl-radius-sm);
+  }
+
+  .tl-tag[data-size='sm'] {
+    --_h: 20px;
+    --_px: var(--tl-space-4);
+    --_fs: var(--tl-text-2xs);
+  }
+
+  /* The remove button eats into the trailing padding so the chip does not grow
+   * a dead strip of background to the right of the X. */
+  .tl-tag[data-removable] {
+    padding-inline-end: var(--tl-space-2);
+  }
+
+  /* -- Variants ------------------------------------------------------------- */
+  .tl-tag[data-variant='neutral'] {
+    --_bg: var(--tl-surface-sunken);
+    --_fg: var(--tl-text-secondary);
+    --_border: var(--tl-border-subtle);
+  }
+  .tl-tag[data-variant='accent'] {
+    --_bg: var(--tl-accent-subtle);
+    --_fg: var(--tl-accent-emphasis);
+    --_border: var(--tl-accent-border);
+  }
+  .tl-tag[data-variant='success'] {
+    --_bg: var(--tl-success-bg);
+    --_fg: var(--tl-success-fg);
+    --_border: var(--tl-success-border);
+  }
+  .tl-tag[data-variant='danger'] {
+    --_bg: var(--tl-danger-bg);
+    --_fg: var(--tl-danger-fg);
+    --_border: var(--tl-danger-border);
+  }
+  .tl-tag[data-variant='warning'] {
+    --_bg: var(--tl-warning-bg);
+    --_fg: var(--tl-warning-fg);
+    --_border: var(--tl-warning-border);
+  }
+  .tl-tag[data-variant='info'] {
+    --_bg: var(--tl-info-bg);
+    --_fg: var(--tl-info-fg);
+    --_border: var(--tl-info-border);
+  }
+
+  .tl-tag[data-disabled] {
+    --_bg: var(--tl-surface-disabled);
+    --_fg: var(--tl-text-disabled);
+    --_border: transparent;
+  }
+
+  /* -- Parts ---------------------------------------------------------------- */
+  .tl-tag__icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    font-size: 1.1em;
+  }
+
+  .tl-tag__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tl-tag__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    position: relative;
+
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    border-radius: var(--tl-radius-xs);
+    opacity: 0.7;
+    transition: var(--tl-transition-control), opacity var(--tl-duration-2xs) var(--tl-ease-out);
+  }
+
+  /* The visible X is 16px, well under the 24px minimum target of WCAG 2.2
+   * SC 2.5.8. Growing the button to 24 would make every chip 24px tall and
+   * airy; a transparent outset gives the pointer the area without changing a
+   * single pixel of the layout. */
+  .tl-tag__remove::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+  }
+
+  .tl-tag__remove:hover:not(:disabled) {
+    opacity: 1;
+    background: var(--_remove-hover-bg);
+  }
+
+  .tl-tag__remove:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .tl-tag__remove-glyph {
+    width: 10px;
+    height: 10px;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    fill: none;
+  }
+
+  @media (forced-colors: active) {
+    .tl-tag {
+      border-color: currentColor;
+    }
+
+    .tl-tag[data-disabled] {
+      color: GrayText;
+      border-color: GrayText;
+    }
+
+    /* Opacity survives forced colors but a 70%-opaque CanvasText glyph next to
+     * a full-strength one reads as a rendering artefact rather than as a
+     * hierarchy, so the control goes to full strength here. */
+    .tl-tag__remove {
+      opacity: 1;
+    }
+  }
+}

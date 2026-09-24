@@ -1,0 +1,9 @@
+/* @t-lingual/ui — stylesheet entry.
+ * Order matters: layers.css must come first so the layer order is pinned before
+ * any rule is parsed. */
+@import './layers.css';
+@import './reset.css';
+@import './tokens.primitive.css';
+@import './tokens.semantic.css';
+@import './tokens.motion.css';
+@import './base.css';

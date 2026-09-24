@@ -184,6 +184,9 @@ func (m *Manager) ServeLive(
 	if err != nil {
 		return err
 	}
+	if session.ArchivedAt != nil {
+		return store.ErrArchived
+	}
 
 	connection, err := websocket.Accept(response, request, &websocket.AcceptOptions{
 		CompressionMode: websocket.CompressionDisabled,
@@ -559,6 +562,10 @@ func (m *Manager) serve(
 	if err != nil {
 		return effectiveRunError(runCtx, err)
 	}
+	resumeOffsetMS, err := m.store.MaxSegmentEndMS(runCtx, user.ID, session.ID)
+	if err != nil {
+		return effectiveRunError(runCtx, err)
+	}
 
 	clientDone := make(chan clientResult, 1)
 	audioLimiter := newAudioRateLimiter(
@@ -576,6 +583,7 @@ func (m *Manager) serve(
 	runID, _ := id.New("run")
 	if err := m.writeReady(runCtx, connection, writeMu, map[string]any{
 		"type": "ready", "sessionId": session.ID, "runId": runID, "chunkMs": upstream.Info().ChunkMS,
+		"offsetMs": resumeOffsetMS,
 	}); err != nil {
 		close(readerStart)
 		return effectiveRunError(runCtx, err)
@@ -583,7 +591,7 @@ func (m *Manager) serve(
 	close(readerStart)
 
 	eventDone := make(chan error, 1)
-	go m.forwardEvents(runCtx, connection, writeMu, upstream, user, session, &lastSequence, eventDone)
+	go m.forwardEvents(runCtx, connection, writeMu, upstream, user, session, current, &lastSequence, resumeOffsetMS, eventDone)
 
 	graceful := false
 	var runErr error
@@ -930,12 +938,17 @@ func (m *Manager) forwardEvents(
 	upstream asr.Stream,
 	user domain.User,
 	session domain.InterpretationSession,
+	current *lease,
 	lastSequence *int64,
+	resumeOffsetMS int64,
 	done chan<- error,
 ) {
 	for event := range upstream.Events() {
 		switch event.Type {
 		case "partial":
+			if !m.isCurrent(session.ID, current) {
+				continue
+			}
 			_ = writeJSON(ctx, connection, writeMu, map[string]any{
 				"type": "partial", "text": event.Text, "upstreamSequence": event.Sequence, "language": event.Language,
 			})
@@ -943,9 +956,18 @@ func (m *Manager) forwardEvents(
 			if event.Text == "" {
 				continue
 			}
+			// A predecessor may still be draining after a replacement timed out.
+			// Serialize its last write against the next run's durable resume cursor.
+			releaseAdmission := m.lockInterpretationAdmission(session.ID)
+			if !m.isCurrent(session.ID, current) {
+				releaseAdmission()
+				done <- errStreamReplaced
+				return
+			}
 			(*lastSequence)++
 			segmentID, err := id.New("seg")
 			if err != nil {
+				releaseAdmission()
 				done <- err
 				return
 			}
@@ -956,12 +978,14 @@ func (m *Manager) forwardEvents(
 			segment := domain.Segment{
 				ID: segmentID, SessionID: session.ID, UserID: user.ID, Sequence: *lastSequence,
 				SourceText: event.Text, TranslationStatus: translationStatus, Final: true,
-				StartMS: event.StartMS, EndMS: event.EndMS, CreatedAt: time.Now().UTC(),
+				StartMS: resumeOffsetMS + event.StartMS, EndMS: resumeOffsetMS + event.EndMS, CreatedAt: time.Now().UTC(),
 			}
 			if err := m.store.AppendSegment(ctx, user.ID, segment); err != nil {
+				releaseAdmission()
 				done <- err
 				return
 			}
+			releaseAdmission()
 			_ = writeJSON(ctx, connection, writeMu, map[string]any{
 				"type": "final", "segment": segment, "upstreamSequence": event.Sequence, "detectedLanguage": event.Language,
 			})

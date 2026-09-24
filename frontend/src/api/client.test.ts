@@ -25,7 +25,7 @@ describe('HTTP API contract', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(api.sessions.get('int_1')).resolves.toEqual(detail)
     await expect(api.sessions.segments('int_1')).resolves.toEqual({ items: detail.segments })
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/v1/sessions/int_1', '/api/v1/sessions/int_1/segments'])
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/v1/view/sessions/int_1', '/api/v1/view/sessions/int_1/segments'])
   })
 
   it('writes the exact flat camelCase settings shape', async () => {
@@ -80,7 +80,7 @@ describe('HTTP API contract', () => {
     await api.admin.audit({ limit: 200, offset: 800 })
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/v1/sessions?limit=200&offset=200',
+      '/api/v1/view/sessions?limit=200&offset=200',
       '/api/v1/admin/invitations?limit=200&offset=400',
       '/api/v1/admin/users?limit=200&offset=600',
       '/api/v1/admin/audit?limit=200&offset=800',

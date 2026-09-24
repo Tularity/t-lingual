@@ -1,0 +1,190 @@
+@layer tl.components {
+  .tl-banner {
+    /* The styling contract. Every variant and emphasis below does nothing but
+     * reassign these four, so retheming one banner never means out-specifying
+     * a selector. */
+    --_bg: var(--tl-surface);
+    --_fg: var(--tl-text);
+    --_border: var(--tl-border);
+    --_icon: var(--tl-text-secondary);
+
+    display: flex;
+    align-items: flex-start;
+    /* Wrapping is what replaces a viewport media query here. A banner does not
+     * know how wide its container is, and a `max-width` breakpoint written
+     * against the viewport is wrong the moment it is placed in a sidebar. */
+    flex-wrap: wrap;
+    gap: var(--tl-space-4) var(--tl-space-6);
+
+    padding: var(--tl-space-6) var(--tl-space-8);
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-md);
+    font-size: var(--tl-text-md);
+    line-height: var(--tl-leading-snug);
+
+    opacity: 1;
+    transform: none;
+    transition: var(--tl-transition-popover-enter);
+  }
+
+  /* A banner arrives rather than appears: a strip that pops into an already
+   * settled page reads as a layout fault, not as a message. The from-values
+   * sit on the bare selector because the component has no presence state — it
+   * renders open or not at all — so its first computed style is the resting
+   * one and `@starting-style` is the only hook there is. There is no matching
+   * exit for the same reason: nothing keeps the node in the DOM once `open`
+   * flips, so a dismissal is a cut. */
+  @starting-style {
+    .tl-banner {
+      opacity: 0;
+      transform: translateY(calc(-1 * var(--tl-lift-sm)));
+    }
+  }
+
+  /* -- Variants, subtle ---------------------------------------------------
+   * The body text stays `--tl-text` rather than the status colour: the tint
+   * already carries the status, and a whole paragraph set in red reads as
+   * shouting rather than as information. The glyph carries the hue. */
+  .tl-banner[data-variant='info'] {
+    --_bg: var(--tl-info-bg);
+    --_border: var(--tl-info-border);
+    --_icon: var(--tl-info-fg);
+  }
+
+  .tl-banner[data-variant='success'] {
+    --_bg: var(--tl-success-bg);
+    --_border: var(--tl-success-border);
+    --_icon: var(--tl-success-fg);
+  }
+
+  .tl-banner[data-variant='warning'] {
+    --_bg: var(--tl-warning-bg);
+    --_border: var(--tl-warning-border);
+    --_icon: var(--tl-warning-fg);
+  }
+
+  .tl-banner[data-variant='danger'] {
+    --_bg: var(--tl-danger-bg);
+    --_border: var(--tl-danger-border);
+    --_icon: var(--tl-danger-fg);
+  }
+
+  /* -- Variants, solid -----------------------------------------------------
+   * `--_icon: currentColor` rather than a status token: on a filled strip the
+   * only value guaranteed to hold contrast is the one the text already uses. */
+  .tl-banner[data-emphasis='solid'] {
+    --_border: transparent;
+    --_icon: currentColor;
+  }
+
+  .tl-banner[data-emphasis='solid'][data-variant='info'] {
+    --_bg: var(--tl-info-solid);
+    --_fg: var(--tl-info-on);
+  }
+
+  .tl-banner[data-emphasis='solid'][data-variant='success'] {
+    --_bg: var(--tl-success-solid);
+    --_fg: var(--tl-success-on);
+  }
+
+  .tl-banner[data-emphasis='solid'][data-variant='warning'] {
+    --_bg: var(--tl-warning-solid);
+    --_fg: var(--tl-warning-on);
+  }
+
+  .tl-banner[data-emphasis='solid'][data-variant='danger'] {
+    --_bg: var(--tl-danger-solid);
+    --_fg: var(--tl-danger-on);
+  }
+
+  /* -- Parts --------------------------------------------------------------- */
+  .tl-banner__icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--_icon);
+    /* Sized in `em` so the glyph grows with a consumer-set font-size instead of
+     * needing a rule per density. */
+    font-size: 1.2em;
+    /* Optical, not geometric: a round glyph centred on a 1.375 line box sits
+     * visibly high against the cap height of the first line of text. */
+    margin-block-start: 1px;
+  }
+
+  .tl-banner__body {
+    /* `16rem` basis, not `0`: the body may wrap onto its own line, but it should
+     * only do so once there is genuinely no room for a readable measure. */
+    flex: 1 1 16rem;
+    min-width: 0;
+  }
+
+  .tl-banner__title {
+    margin: 0;
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-snug);
+  }
+
+  .tl-banner__title + .tl-banner__content {
+    margin-block-start: var(--tl-space-2);
+  }
+
+  .tl-banner__content {
+    min-width: 0;
+  }
+
+  .tl-banner__actions {
+    display: flex;
+    align-items: center;
+    flex: none;
+    flex-wrap: wrap;
+    gap: var(--tl-space-4);
+  }
+
+  .tl-banner__dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+
+    /* WCAG 2.2 SC 2.5.8 wants 24x24 of pointer target. The negative margins pull
+     * the extra box back out of the layout so the padding still reads as the
+     * padding the designer specified. */
+    width: 24px;
+    height: 24px;
+    margin-block: -2px;
+    margin-inline-end: calc(var(--tl-space-2) * -1);
+
+    font-size: 1.05em;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: var(--tl-radius-sm);
+    cursor: pointer;
+    transition: var(--tl-transition-control);
+  }
+
+  /* `currentColor` mixed into transparency rather than a surface token: this
+   * button sits on four different tints plus four solid fills, and one rule
+   * that derives from the inherited text colour covers all eight. */
+  .tl-banner__dismiss:hover {
+    background: color-mix(in oklab, currentColor 14%, transparent);
+  }
+
+  .tl-banner__dismiss:active {
+    background: color-mix(in oklab, currentColor 22%, transparent);
+  }
+
+  /* Forced colors strips `background-color`, which is the only thing separating
+   * a solid banner from a subtle one and a tinted banner from the page. The
+   * border is what survives, so make sure there always is one. */
+  @media (forced-colors: active) {
+    .tl-banner {
+      border-color: CanvasText;
+    }
+
+    .tl-banner__icon {
+      color: CanvasText;
+    }
+  }
+}

@@ -75,7 +75,6 @@ func TestLanguageValidation(t *testing.T) {
 	tests := []CreateInput{
 		{SourceLanguage: "auto", TargetLanguage: "auto"},
 		{SourceLanguage: "en_US", TargetLanguage: "fr-FR"},
-		{SourceLanguage: "en-US", TargetLanguage: "EN-us"},
 		{SourceLanguage: "xx", TargetLanguage: "fr"},
 		{SourceLanguage: "zh", TargetLanguage: "en"},
 	}
@@ -83,5 +82,59 @@ func TestLanguageValidation(t *testing.T) {
 		if _, err := service.Create(context.Background(), "usr", input); err == nil {
 			t.Fatalf("expected invalid languages: %#v", input)
 		}
+	}
+}
+
+func TestRecognitionSetupPersistsAndViewerTargetDefaultsToUserSettings(t *testing.T) {
+	service, database := newWorkspace(t)
+	ctx := context.Background()
+	settings := domain.DefaultUserSettings("usr_one")
+	settings.DefaultSourceLanguage = "auto"
+	settings.DefaultTargetLanguage = "fr"
+	if err := database.UpsertUserSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.Create(ctx, "usr_one", CreateInput{
+		Title: "Multilingual", SourceLanguage: "en", RecognitionLanguages: []string{"en-US", "fr-FR"},
+		Diarization: true,
+	})
+	if err != nil || created.SourceLanguage != "auto" || created.TargetLanguage != "fr" ||
+		len(created.RecognitionLanguages) != 2 || created.RecognitionLanguages[0] != "en" ||
+		created.RecognitionLanguages[1] != "fr" || !created.Diarization {
+		t.Fatalf("multilingual create = %#v, %v", created, err)
+	}
+	legacyFalse, err := service.Create(ctx, "usr_one", CreateInput{Title: "Legacy false option",
+		SourceLanguage: "en", TargetLanguage: "fr", Diarization: false})
+	if err != nil || !legacyFalse.Diarization {
+		t.Fatalf("new session accepted diarization:false: %#v %v", legacyFalse, err)
+	}
+	falseValue := false
+	updated, err := service.Update(ctx, "usr_one", created.ID, UpdateInput{
+		Title: "New speakers", SourceLanguage: "auto", RecognitionLanguages: []string{"ja", "ko"},
+		Diarization: &falseValue,
+	})
+	if err != nil || updated.TargetLanguage != "fr" || updated.SourceLanguage != "auto" ||
+		len(updated.RecognitionLanguages) != 2 || updated.RecognitionLanguages[0] != "ja" || !updated.Diarization {
+		t.Fatalf("recognition update = %#v, %v", updated, err)
+	}
+	retained, err := service.Update(ctx, "usr_one", created.ID, UpdateInput{
+		Title: "Retained setup", SourceLanguage: "auto", TargetLanguage: "de",
+	})
+	if err != nil || len(retained.RecognitionLanguages) != 2 || retained.RecognitionLanguages[1] != "ko" || !retained.Diarization {
+		t.Fatalf("omitted setup was not retained: %#v, %v", retained, err)
+	}
+	if _, err := service.Create(ctx, "usr_one", CreateInput{
+		Title: "Duplicate", SourceLanguage: "auto", TargetLanguage: "en",
+		RecognitionLanguages: []string{"en", "en-US"},
+	}); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("duplicate recognition language = %v", err)
+	}
+}
+
+func TestRecordingMayMatchViewerDefaultLanguage(t *testing.T) {
+	service, _ := newWorkspace(t)
+	session, err := service.Create(context.Background(), "usr_one", CreateInput{Title: "English meeting", SourceLanguage: "en", TargetLanguage: "en", RecognitionLanguages: []string{"en"}})
+	if err != nil || session.SourceLanguage != "en" {
+		t.Fatalf("same-language recording: %#v, %v", session, err)
 	}
 }

@@ -1,0 +1,11 @@
+/* IconButton is Button geometry — `data-icon-only` in Button.css already gives
+ * it square proportions and the WCAG 2.5.8 hit-target outset. The only thing
+ * left to own here is the corner treatment, so this sheet is deliberately thin
+ * rather than restating a second copy of the size scale. */
+@layer tl.components {
+  .tl-icon-button[data-shape='round'] {
+    /* The full pill radius, not a large fixed value: the button is square at
+     * every size, so `round` resolves to a circle without a per-size rule. */
+    border-radius: var(--tl-radius-round);
+  }
+}

@@ -59,6 +59,152 @@ func TestClientUsesStableTranslationContract(t *testing.T) {
 	}
 }
 
+func TestReadinessAcceptsGPUEmpty200AndStrictLegacyJSON(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status int
+		body   string
+		ready  bool
+	}{
+		{name: "GPU empty 200", status: http.StatusOK, ready: true},
+		{name: "legacy ready JSON", status: http.StatusOK, body: `{"status":"ready"}`, ready: true},
+		{name: "whitespace is not an empty response", status: http.StatusOK, body: " \n"},
+		{name: "legacy not ready", status: http.StatusOK, body: `{"status":"loading"}`},
+		{name: "non-200 remains failure", status: http.StatusServiceUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				if request.Method != http.MethodGet || request.URL.Path != "/health/ready" {
+					t.Errorf("health route = %s %s", request.Method, request.URL.Path)
+				}
+				response.WriteHeader(test.status)
+				_, _ = response.Write([]byte(test.body))
+			}))
+			defer server.Close()
+			base, _ := url.Parse(server.URL)
+			client, err := NewClient(base, "", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = client.Ready(context.Background())
+			if (err == nil) != test.ready {
+				t.Fatalf("Ready() error = %v, want ready=%t", err, test.ready)
+			}
+		})
+	}
+}
+
+func TestAutoSourceUsesResolvedResponseLanguageAndAllowsSameTarget(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		requested string
+		resolved  string
+		target    string
+	}{
+		{name: "explicit auto with same target", requested: "auto", resolved: "en", target: "en"},
+		{name: "omitted source defaults to auto", requested: "", resolved: "zh-Hans", target: "en"},
+		{name: "explicit same source and target", requested: "en-US", resolved: "en", target: "en"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var received Request
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				if request.URL.Path != "/v1/translate" || request.Method != http.MethodPost {
+					t.Errorf("unexpected provider route %s %s", request.Method, request.URL.Path)
+				}
+				if err := json.NewDecoder(request.Body).Decode(&received); err != nil {
+					t.Error(err)
+				}
+				_ = json.NewEncoder(response).Encode(Response{
+					RequestID: "01KAUTO", SourceLanguage: test.resolved, TargetLanguage: test.target,
+					SourceDetection: func() *SourceDetection {
+						if test.requested != "" && test.requested != "auto" {
+							return nil
+						}
+						return &SourceDetection{Method: "fasttext-lid.176", Confidence: .91, Rank: 1}
+					}(),
+					Translation: "Hello", Model: "xiaomi-research/MiLMMT-46-4B-v1.0",
+					Usage: Usage{InputTokens: 2, OutputTokens: 1},
+				})
+			}))
+			defer server.Close()
+			base, _ := url.Parse(server.URL)
+			client, err := NewClient(base, "", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := client.Translate(context.Background(), Request{
+				SourceLanguage: test.requested, TargetLanguage: test.target, Text: "Hello",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.SourceLanguage != test.resolved || result.TargetLanguage != test.target {
+				t.Fatalf("resolved response = %#v", result)
+			}
+			wantSource := test.requested
+			if wantSource == "" {
+				wantSource = "auto"
+			}
+			if received.SourceLanguage != wantSource || received.TargetLanguage != test.target {
+				t.Fatalf("wire request = %#v", received)
+			}
+		})
+	}
+}
+
+func TestAutoSourceFailsClosedOnUnresolvedOrInvalidResponse(t *testing.T) {
+	for _, source := range []string{"auto", "", "unsupported-source"} {
+		t.Run("source="+source, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(response).Encode(Response{
+					RequestID: "01KINVALID", SourceLanguage: source, TargetLanguage: "fr",
+					Translation: "Bonjour", Model: "xiaomi-research/MiLMMT-46-4B-v1.0",
+					Usage: Usage{InputTokens: 2, OutputTokens: 1},
+				})
+			}))
+			defer server.Close()
+			base, _ := url.Parse(server.URL)
+			client, _ := NewClient(base, "", server.Client())
+			if _, err := client.Translate(context.Background(), Request{SourceLanguage: "auto", TargetLanguage: "fr", Text: "hello"}); err == nil {
+				t.Fatal("unresolved or invalid provider source accepted")
+			}
+		})
+	}
+}
+
+func TestAutoSourceRejectsMissingDetectionInSynchronousResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(response).Encode(Response{
+			RequestID: "01KMISSING", SourceLanguage: "en", TargetLanguage: "fr",
+			Translation: "Bonjour", Model: "xiaomi-research/MiLMMT-46-4B-v1.0",
+			Usage: Usage{InputTokens: 2, OutputTokens: 1},
+		})
+	}))
+	defer server.Close()
+	base, _ := url.Parse(server.URL)
+	client, _ := NewClient(base, "", server.Client())
+	if _, err := client.Translate(context.Background(), Request{SourceLanguage: "auto", TargetLanguage: "fr", Text: "hello"}); err == nil {
+		t.Fatal("auto response without required LID metadata accepted")
+	}
+}
+
+func TestAutoSourceProviderDetectionFailureIsTyped(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(response).Encode(map[string]any{"error": map[string]string{
+			"code": "source_language_detection_failed", "message": "Source language could not be determined.", "request_id": "01KDETECT",
+		}})
+	}))
+	defer server.Close()
+	base, _ := url.Parse(server.URL)
+	client, _ := NewClient(base, "", server.Client())
+	_, err := client.Translate(context.Background(), Request{SourceLanguage: "auto", TargetLanguage: "fr", Text: "hello"})
+	var providerErr *ProviderError
+	if !errors.As(err, &providerErr) || providerErr.Code != "source_language_detection_failed" || providerErr.StatusCode != http.StatusUnprocessableEntity || providerErr.Temporary() {
+		t.Fatalf("auto detection failure = %#v (%v)", providerErr, err)
+	}
+}
+
 func TestClientPreservesRetryMetadata(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -107,6 +253,7 @@ func TestClientRejectsUntrustedResponseIdentityAndLanguage(t *testing.T) {
 		name   string
 		mutate func(*Response)
 	}{
+		{name: "wrong explicit source language", mutate: func(result *Response) { result.SourceLanguage = "de" }},
 		{name: "wrong target language", mutate: func(result *Response) { result.TargetLanguage = "de" }},
 		{name: "oversized request identity", mutate: func(result *Response) { result.RequestID = strings.Repeat("x", 257) }},
 		{name: "zero usage", mutate: func(result *Response) { result.Usage.OutputTokens = 0 }},

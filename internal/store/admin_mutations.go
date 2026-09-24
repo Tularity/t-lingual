@@ -320,6 +320,14 @@ func (s *Store) updateUserWithAudit(
 	if err := requireAffected(result, err, "update user role and status"); err != nil {
 		return AdminUserUpdateResult{}, err
 	}
+	if currentRole != finalRole || currentStatus != finalStatus {
+		// Code issuance predates this privilege/status generation. Revoke in
+		// the same transaction so a racing redemption either wins under the
+		// old role (then session cleanup below applies) or sees the revocation.
+		if err := revokeOutstandingLoginCodesTx(ctx, tx, userID, updatedAt); err != nil {
+			return AdminUserUpdateResult{}, err
+		}
+	}
 	if finalStatus == domain.UserDisabled || promotedToAdmin {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM browser_sessions WHERE user_id = ?", userID); err != nil {
 			return AdminUserUpdateResult{}, fmt.Errorf("store: delete user browser sessions after privilege change: %w", mapSQLError(err))

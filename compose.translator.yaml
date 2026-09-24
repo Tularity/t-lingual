@@ -1,0 +1,12 @@
+# Optional connection to the separately deployed translator API.
+# This project never joins the private inference network or starts an engine.
+services:
+  app:
+    networks:
+      default: {}
+      translator-api: {}
+
+networks:
+  translator-api:
+    external: true
+    name: ${TLINGUAL_TRANSLATOR_NETWORK:-llm-translator-gpu_edge}

@@ -1,0 +1,74 @@
+@layer tl.components {
+  .tl-toolbar {
+    --_bg: transparent;
+    --_border: transparent;
+    --_gap: var(--tl-space-3);
+    --_pad: var(--tl-space-2);
+
+    display: flex;
+    align-items: center;
+    gap: var(--_gap);
+    min-width: 0;
+
+    padding: var(--_pad);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-md);
+  }
+
+  .tl-toolbar[data-orientation='vertical'] {
+    flex-direction: column;
+    align-items: stretch;
+    /* A vertical toolbar that wraps into columns is unreadable, and the roving
+     * order would no longer match the visual order. */
+    flex-wrap: nowrap;
+    width: fit-content;
+  }
+
+  .tl-toolbar[data-orientation='horizontal'][data-wrap='wrap'] {
+    flex-wrap: wrap;
+  }
+
+  .tl-toolbar[data-orientation='horizontal'][data-wrap='nowrap'] {
+    flex-wrap: nowrap;
+    /* A toolbar told not to wrap has to be able to scroll, or the controls past
+     * the fold become unreachable by pointer at narrow widths. Arrow keys still
+     * reach them, but a mouse user has nothing. */
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  /* -- Group ----------------------------------------------------------------
+   * A tighter gap inside a group than between groups is what makes the grouping
+   * legible without a divider doing all the work. */
+  .tl-toolbar__group {
+    display: flex;
+    align-items: center;
+    gap: var(--tl-space-1);
+    min-width: 0;
+  }
+
+  .tl-toolbar[data-orientation='vertical'] .tl-toolbar__group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* -- Separator ------------------------------------------------------------
+   * Inset from the toolbar's own edges so the rule reads as a division between
+   * items rather than as a border on the toolbar. */
+  .tl-toolbar__separator {
+    --_color: var(--tl-border);
+  }
+
+  /* A descendant selector, not a child one: a separator is usually a sibling of
+   * the groups it divides, but nothing stops one appearing inside a group and
+   * it should still be inset when it does. */
+  .tl-toolbar[data-orientation='horizontal'] .tl-toolbar__separator {
+    margin-block: var(--tl-space-1);
+    margin-inline: var(--tl-space-1);
+  }
+
+  .tl-toolbar[data-orientation='vertical'] .tl-toolbar__separator {
+    margin-block: var(--tl-space-1);
+  }
+}

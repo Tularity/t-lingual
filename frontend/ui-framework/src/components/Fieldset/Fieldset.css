@@ -1,0 +1,91 @@
+@layer tl.components {
+  .tl-fieldset {
+    --_legend-fg: var(--tl-text);
+    --_hint-fg: var(--tl-text-secondary);
+    --_error-fg: var(--tl-danger-fg);
+    --_meta-fg: var(--tl-text-subtle);
+
+    /* The UA gives every fieldset a border, padding and a margin of its own. */
+    margin: 0;
+    padding: 0;
+    border: 0;
+
+    /* A fieldset carries a UA `min-inline-size: min-content` that no other
+     * element has. Without this, one long unbreakable string inside the group
+     * pushes the fieldset — and any flex or grid track holding it — wider than
+     * the viewport, and the usual `min-width: 0` on the parent does not help
+     * because the offending minimum is on the fieldset itself. */
+    min-inline-size: 0;
+  }
+
+  .tl-fieldset__legend {
+    /* Inline flow, not flex.
+     *
+     * `<legend>` is rendered by a special-cased algorithm that cuts it into the
+     * fieldset's border box, and Safari ignores `display: flex` on it — the
+     * marker and the caption end up stacked on top of one another there while
+     * looking correct in Chrome. So the caption, the marker and the optional
+     * tag are ordinary inline boxes separated by inline margins, which every
+     * engine agrees on and which also wraps correctly for a long caption. */
+    display: block;
+    padding: 0;
+    font-size: var(--tl-text-sm);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-snug);
+    color: var(--_legend-fg);
+  }
+
+  .tl-fieldset[data-disabled] {
+    --_legend-fg: var(--tl-text-disabled);
+    --_hint-fg: var(--tl-text-disabled);
+    --_meta-fg: var(--tl-text-disabled);
+  }
+
+  .tl-fieldset__marker {
+    margin-inline-start: var(--tl-space-1);
+    color: var(--_error-fg);
+  }
+
+  .tl-fieldset__optional {
+    margin-inline-start: var(--tl-space-2);
+    font-weight: var(--tl-weight-regular);
+    font-size: var(--tl-text-xs);
+    color: var(--_meta-fg);
+  }
+
+  .tl-fieldset__hint {
+    margin: var(--tl-space-2) 0 0;
+    font-size: var(--tl-text-xs);
+    line-height: var(--tl-leading-snug);
+    color: var(--_hint-fg);
+  }
+
+  .tl-fieldset__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-6);
+    margin-block-start: var(--tl-space-6);
+    min-inline-size: 0;
+  }
+
+  .tl-fieldset__error {
+    margin: 0;
+    font-size: var(--tl-text-xs);
+    line-height: var(--tl-leading-snug);
+    color: var(--_error-fg);
+  }
+
+  /* Populated-only margin, so the always-present live region collapses to zero
+   * height while it is empty. */
+  .tl-fieldset__error:not(:empty) {
+    margin-block-start: var(--tl-space-3);
+  }
+
+  /* Nothing here conveys state through background alone, but a disabled group
+   * must still read as disabled when the author's colours are thrown away. */
+  @media (forced-colors: active) {
+    .tl-fieldset[data-disabled] .tl-fieldset__legend {
+      color: GrayText;
+    }
+  }
+}

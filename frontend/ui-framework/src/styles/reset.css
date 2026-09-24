@@ -1,0 +1,74 @@
+/* ---------------------------------------------------------------------------
+ * RESET
+ *
+ * Sits in the lowest layer, so an app's own reset — layered or not — always
+ * wins. Deliberately small: this normalises the handful of defaults that
+ * actively fight a component framework, and leaves the rest alone.
+ * ------------------------------------------------------------------------- */
+@layer tl.reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* Form controls do not inherit type by default in any engine. */
+  button,
+  input,
+  select,
+  textarea,
+  optgroup {
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+  }
+
+  button {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  /* `overflow: auto` is the default on textarea only in Firefox; everywhere
+   * else it is `scroll`, which paints a permanent scrollbar gutter. */
+  textarea {
+    overflow: auto;
+    resize: vertical;
+  }
+
+  img,
+  svg,
+  video,
+  canvas {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* Keeps a long session id or an unbroken CJK transcript line from pushing a
+   * grid track wider than the viewport. */
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    overflow-wrap: break-word;
+  }
+
+  /* The UA default `list-style` is meaningful for prose but never for the
+   * lists a component framework produces; components opt back in explicitly. */
+  :where(ul, ol)[data-tl] {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Removing the outline entirely is the single most common accessibility
+   * regression in a design system. This removes it ONLY where a visible
+   * `:focus-visible` ring is guaranteed by the framework's base layer. */
+  :where(button, [role='button'], a, input, select, textarea, summary, [tabindex]):focus {
+    outline: none;
+  }
+}

@@ -127,6 +127,119 @@ func TestClientSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestCurrentASRCapabilitiesLanguageRegionsAndDiarizationEvents(t *testing.T) {
+	var created StartRequest
+	person := 0
+	end := int64(1_200)
+	handler := http.NewServeMux()
+	handler.HandleFunc("GET /v1/capabilities", func(response http.ResponseWriter, request *http.Request) {
+		assertBearer(t, request)
+		_ = json.NewEncoder(response).Encode(Capabilities{
+			Backend: "xasr", SupportedLanguages: []string{"auto", "en", "en-US", "zh-CN", "zh-ZH"},
+			LanguageRegions: LanguageRegionCapabilities{Clock: "source_pcm_16khz_ms", Mode: "boundary_reset_no_prompt", FutureUpdates: true},
+			Diarization:     true, SpeakerEmbeddings: true, AudioSense: true,
+		})
+	})
+	handler.HandleFunc("POST /v1/sessions", func(response http.ResponseWriter, request *http.Request) {
+		assertBearer(t, request)
+		if err := json.NewDecoder(request.Body).Decode(&created); err != nil {
+			t.Error(err)
+			return
+		}
+		info := validStartResponse("xasr-demo", created.Audio)
+		info.LanguageRegions = created.LanguageRegions
+		info.LanguageRegionMode = "boundary_reset_no_prompt"
+		info.Diarize = true
+		info.DiarLatencyMS = new(int)
+		*info.DiarLatencyMS = 1040
+		info.MaxSpeakers = new(int)
+		*info.MaxSpeakers = 4
+		response.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(response).Encode(info)
+	})
+	handler.HandleFunc("GET /v1/sessions/xasr-demo/audio", func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		_ = writeEvent(request.Context(), connection, Event{Type: "partial", Sequence: 1, Text: "hel", WallMS: 17_800})
+		_ = writeEvent(request.Context(), connection, Event{Type: "final", Sequence: 2, Line: 1, Text: "hello", StartMS: 0, EndMS: 500, Wall0MS: 17_800, Wall1MS: 18_300, Language: "en-US"})
+		_ = writeEvent(request.Context(), connection, Event{Type: "speaker", Sequence: 3, Speaker: &person, StartMS: 0, EndMS: 500, Wall0MS: 17_800, Wall1MS: 18_300})
+		for {
+			_, _, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+		}
+	})
+	handler.HandleFunc("DELETE /v1/sessions/xasr-demo", func(response http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(response).Encode(map[string]bool{"closed": true})
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	base, _ := url.Parse(server.URL)
+	client, err := NewClient(base, "provider-secret", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if language, err := NormalizeLanguage("zh-Hans", capabilities); err != nil || language != "zh-CN" {
+		t.Fatalf("Chinese ASR boundary = %q, %v", language, err)
+	}
+	if _, err := NormalizeLanguage("fr", capabilities); err == nil {
+		t.Fatal("unavailable ASR language silently accepted")
+	}
+	stream, err := client.Start(context.Background(), StartRequest{
+		Language: "auto", Audio: AudioSpec{Encoding: "pcm32f", SampleRate: 48_000, Channels: 1}, Diarize: true,
+		LanguageRegions: []LanguageRegion{{StartMS: 0, EndMS: &end, Language: "zh-CN"}, {StartMS: end, Language: "en-US"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close(context.Background())
+	if created.Language != "auto" || !created.Diarize || len(created.LanguageRegions) != 2 || created.LanguageRegions[1].EndMS != nil {
+		t.Fatalf("create request = %#v", created)
+	}
+	if !stream.Info().Diarize || stream.Info().MaxSpeakers == nil || *stream.Info().MaxSpeakers != 4 || stream.Info().LanguageRegionMode != "boundary_reset_no_prompt" {
+		t.Fatalf("ASR response capability = %#v", stream.Info())
+	}
+	partial, final, speaker := <-stream.Events(), <-stream.Events(), <-stream.Events()
+	if partial.WallMS != 17_800 || final.Wall0MS != 17_800 || final.Language != "en-US" || speaker.Speaker == nil || *speaker.Speaker != 0 || speaker.Wall1MS != 18_300 {
+		t.Fatalf("ASR events: partial=%#v final=%#v speaker=%#v", partial, final, speaker)
+	}
+}
+
+func TestASRLanguageRegionValidationAndNoInventedLanguage(t *testing.T) {
+	capabilities := Capabilities{SupportedLanguages: []string{"auto", "en-US", "zh-CN"}}
+	if language, err := NormalizeLanguage("auto", capabilities); err != nil || language != "auto" {
+		t.Fatalf("auto became a detected language: %q, %v", language, err)
+	}
+	if language, err := NormalizeLanguage("en", capabilities); err != nil || language != "en-US" {
+		t.Fatalf("English alias = %q, %v", language, err)
+	}
+	end := int64(100)
+	base := StartRequest{Language: "auto", Audio: AudioSpec{Encoding: "pcm32f", SampleRate: 16_000, Channels: 1}}
+	for _, regions := range [][]LanguageRegion{
+		{{StartMS: -1, EndMS: &end, Language: "en"}},
+		{{StartMS: 0, EndMS: &end, Language: "en"}, {StartMS: 99, Language: "zh-CN"}},
+		{{StartMS: 0, Language: "en"}, {StartMS: 100, Language: "zh-CN"}},
+		{{StartMS: 0, EndMS: &end, Language: "en\nforged"}},
+	} {
+		base.LanguageRegions = regions
+		if err := validateStart(base); err == nil {
+			t.Fatalf("accepted malformed language regions: %#v", regions)
+		}
+	}
+	if err := validateEvent(&Event{Type: "speaker", StartMS: 0, EndMS: 100, Wall0MS: 200, Wall1MS: 300}); err == nil {
+		t.Fatal("speaker event without speaker ID accepted")
+	}
+}
+
 func TestSessionWaitTreatsTransportEOFAfterSuccessfulEndAsNormal(t *testing.T) {
 	t.Parallel()
 

@@ -1,0 +1,103 @@
+@layer tl.components {
+  .tl-avatar {
+    --_size: 32px;
+    --_fs: var(--tl-text-xs);
+    --_bg: var(--tl-surface-sunken);
+    --_fg: var(--tl-text-secondary);
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    position: relative;
+
+    width: var(--_size);
+    height: var(--_size);
+    font-size: var(--_fs);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-none);
+    user-select: none;
+
+    color: var(--_fg);
+    background: var(--_bg);
+    overflow: hidden;
+
+    /* The separator ring between overlapping avatars. `--_ring` and
+     * `--_ring-width` are read through fallbacks instead of being declared at
+     * the top of this block, which is the one place the usual pattern is wrong:
+     * a custom property declared on the element itself wins over the same
+     * property inherited from an ancestor, so declaring them here would make
+     * `--_ring: var(--tl-surface-elevated)` set on the AvatarGroup — the
+     * natural place to say "this stack sits on a card" — silently do nothing.
+     *
+     * A box-shadow rather than a border, so the ring does not eat into the
+     * declared size and leave a 32px avatar measuring 36px inside a group. */
+    box-shadow: 0 0 0 var(--_ring-width, 0px) var(--_ring, var(--tl-bg));
+  }
+
+  .tl-avatar[data-shape='circle'] { border-radius: var(--tl-radius-round); }
+  .tl-avatar[data-shape='square'] { border-radius: var(--tl-radius-sm); }
+
+  .tl-avatar[data-size='xs'] { --_size: 20px; --_fs: var(--tl-text-2xs); }
+  .tl-avatar[data-size='sm'] { --_size: 24px; --_fs: var(--tl-text-2xs); }
+  .tl-avatar[data-size='md'] { --_size: 32px; --_fs: var(--tl-text-xs); }
+  .tl-avatar[data-size='lg'] { --_size: 48px; --_fs: var(--tl-text-lg); }
+
+  .tl-avatar__image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* `cover` stops a portrait from being squashed into a square, and the
+     * origin is pulled above centre because faces sit in the upper half of
+     * almost every photograph anyone uploads as an avatar. */
+    object-fit: cover;
+    object-position: center 40%;
+  }
+
+  .tl-avatar__fallback {
+    /* Initials read optically small inside a circle, so they are set a touch
+     * tighter than the surrounding UI to buy back some width. */
+    letter-spacing: var(--tl-tracking-tight);
+  }
+
+  /* -- Group ---------------------------------------------------------------- */
+  .tl-avatar-group {
+    --_overlap: 8px;
+    --_ring-width: 2px;
+
+    display: inline-flex;
+    align-items: center;
+    /* Later avatars paint over earlier ones; `isolate` keeps that stacking
+     * contained so it cannot interleave with anything around the group. */
+    isolation: isolate;
+  }
+
+  .tl-avatar-group[data-size='xs'] { --_overlap: 6px; --_ring-width: 1.5px; }
+  .tl-avatar-group[data-size='sm'] { --_overlap: 7px; }
+  .tl-avatar-group[data-size='lg'] { --_overlap: 12px; --_ring-width: 3px; }
+
+  .tl-avatar-group > * + * {
+    margin-inline-start: calc(var(--_overlap) * -1);
+  }
+
+  .tl-avatar-group__overflow {
+    --_bg: var(--tl-surface-active);
+    --_fg: var(--tl-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The ring is a box-shadow, which forced colors removes — the avatars would
+   * merge into one blob. An outline restores each silhouette, and the overlap
+   * is turned into a small gap because two outlined circles that intersect are
+   * harder to count than two that do not. */
+  @media (forced-colors: active) {
+    .tl-avatar {
+      outline: 1px solid CanvasText;
+      outline-offset: -1px;
+    }
+
+    .tl-avatar-group {
+      --_overlap: -2px;
+    }
+  }
+}

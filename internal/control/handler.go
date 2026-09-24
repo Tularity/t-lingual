@@ -59,6 +59,8 @@ func (h *handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		default:
 			h.methodNotAllowed(response, http.MethodGet+", "+http.MethodPost)
 		}
+	case CodesPath:
+		h.route(response, request, http.MethodPost, h.createCode)
 	case InvitationRevokePath:
 		h.route(response, request, http.MethodPost, h.revokeInvitation)
 	case UsersPath:
@@ -124,6 +126,47 @@ func (h *handler) createInvitation(response http.ResponseWriter, request *http.R
 		Invitation: result.Invitation,
 		Code:       result.Code,
 	})
+}
+
+func (h *handler) createCode(response http.ResponseWriter, request *http.Request) {
+	if !requireNoQuery(response, request) {
+		return
+	}
+	var body CreateCodeRequest
+	if !h.decodeJSON(response, request, &body) {
+		return
+	}
+	var input admin.CodeCreateInput
+	input.Kind, input.TargetUserID = body.Kind, body.TargetUserID
+	for _, field := range []struct {
+		value  string
+		target **time.Time
+	}{{body.NotBefore, &input.NotBefore}, {body.ExpiresAt, &input.ExpiresAt}} {
+		if field.value == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, field.value)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, "INVALID_CODE_SCHEDULE", "Dates must be RFC3339.")
+			return
+		}
+		parsed = parsed.UTC()
+		*field.target = &parsed
+	}
+	if body.TTL != "" {
+		duration, err := time.ParseDuration(body.TTL)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, "INVALID_CODE_SCHEDULE", "ttl must be a duration.")
+			return
+		}
+		input.TTL = duration
+	}
+	result, err := h.admin.CreateCodeAsTrustedControl(request.Context(), input)
+	if err != nil {
+		h.writeServiceError(response, request, err)
+		return
+	}
+	writeJSON(response, http.StatusCreated, CreateCodeResponse{Invitation: result.Invitation, Code: result.Code})
 }
 
 func (h *handler) listInvitations(response http.ResponseWriter, request *http.Request) {
@@ -264,6 +307,8 @@ func (h *handler) writeServiceError(response http.ResponseWriter, request *http.
 		writeError(response, http.StatusConflict, "SAFETY_CONFLICT", "The operation would violate an administrative safety rule.")
 	case errors.Is(err, admin.ErrAdminRequired):
 		writeError(response, http.StatusForbidden, "ADMIN_REQUIRED", "An active administrator is required.")
+	case errors.Is(err, admin.ErrInvalidCode):
+		writeError(response, http.StatusBadRequest, "INVALID_CODE_SCHEDULE", "Check the code type, target, and activation window.")
 	default:
 		slog.ErrorContext(request.Context(), "local admin control request failed", "path", request.URL.Path, "error", err)
 		writeError(response, http.StatusInternalServerError, "INTERNAL_ERROR", "The running server could not complete the administrative operation.")

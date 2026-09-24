@@ -1,0 +1,65 @@
+@layer tl.components {
+  .tl-pagination {
+    --_gap: var(--tl-space-2);
+    --_min-page: 30px;
+
+    display: block;
+  }
+
+  .tl-pagination[data-size='sm'] { --_min-page: 30px; }
+  .tl-pagination[data-size='md'] { --_min-page: 36px; }
+  .tl-pagination[data-size='lg'] { --_min-page: 44px; }
+
+  .tl-pagination__list {
+    display: flex;
+    align-items: center;
+    gap: var(--_gap);
+
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tl-pagination__item {
+    display: flex;
+  }
+
+  /* Every page button reserves the same width whatever digits are in it, so the
+   * row does not resize as the user moves from page 9 to page 10 and the button
+   * under the pointer does not slide out from under the next click. */
+  .tl-pagination__page {
+    min-width: var(--_min-page);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tl-pagination__ellipsis {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--_min-page);
+    color: var(--tl-text-subtle);
+    user-select: none;
+  }
+
+  .tl-pagination__chevron {
+    /* The chevrons point along the reading direction, so they have to turn
+     * around with it. */
+    display: block;
+  }
+
+  [dir='rtl'] .tl-pagination__chevron {
+    transform: scaleX(-1);
+  }
+
+  /* The current page is marked by the primary fill, which forced colors
+   * removes — every button would look identical while `aria-current` still
+   * claims one of them is where you are. An underline is a shape, so it
+   * survives. */
+  @media (forced-colors: active) {
+    .tl-pagination__page[aria-current='page'] {
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 3px;
+    }
+  }
+}

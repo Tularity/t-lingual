@@ -3,8 +3,11 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +27,8 @@ func TestAuthorizationScopesAreRestrictedAndCanonical(t *testing.T) {
 	}{
 		{name: "omitted default", scope: "", want: AuthorizationScopePasskeyManagement, valid: true},
 		{name: "explicit default", scope: AuthorizationScopePasskeyManagement, want: AuthorizationScopePasskeyManagement, valid: true},
+		{name: "add-passkey recovery only", scope: AuthorizationScopeRecoveryPasskeyAdd, want: AuthorizationScopeRecoveryPasskeyAdd, valid: true},
+		{name: "site settings digest", scope: "admin:site-settings:update:" + strings.Repeat("a", 64), want: "admin:site-settings:update:" + strings.Repeat("a", 64), valid: true},
 		{name: "default invitation expiry", scope: "admin:invitation:create:0", want: "admin:invitation:create:0", valid: true},
 		{name: "explicit invitation expiry", scope: "admin:invitation:create:720", want: "admin:invitation:create:720", valid: true},
 		{name: "invitation target", scope: "admin:invitation:revoke:inv_abc123", want: "admin:invitation:revoke:inv_abc123", valid: true},
@@ -54,6 +59,19 @@ func TestAuthorizationScopesAreRestrictedAndCanonical(t *testing.T) {
 	updateScope, err := AdminUserUpdateAuthorizationScope("usr_target", &role, &status)
 	if err != nil || updateScope != "admin:user:update:usr_target:admin:disabled" {
 		t.Fatalf("AdminUserUpdateAuthorizationScope = %q, %v", updateScope, err)
+	}
+}
+
+func TestSiteSettingsScopeMatchesCompactBrowserJSONIncludingMarkdownSymbols(t *testing.T) {
+	markdown := "> Ask <admin> & use \"code\"\nNext line."
+	// This is the exact UTF-8 output of JSON.stringify({registrationHelpMarkdown,
+	// codeAttemptsPerMinute}) with that insertion order and no extra spaces.
+	compact := `{"registrationHelpMarkdown":"> Ask <admin> & use \"code\"\nNext line.","codeAttemptsPerMinute":3}`
+	hash := sha256.Sum256([]byte(compact))
+	want := fmt.Sprintf("admin:site-settings:update:%x", hash)
+	got, err := AdminSiteSettingsAuthorizationScope(markdown, 3)
+	if err != nil || got != want {
+		t.Fatalf("site settings scope = %q %v, want %q", got, err, want)
 	}
 }
 

@@ -1,0 +1,192 @@
+@layer tl.components {
+  .tl-steps {
+    /* The styling contract. Every status below reassigns these five and nothing
+     * else, so a product that wants brown markers instead of amber sets one
+     * property per state rather than rewriting the selectors. */
+    --_marker: 28px;
+    --_marker-bg: var(--tl-surface);
+    --_marker-fg: var(--tl-text-subtle);
+    --_marker-border: var(--tl-border);
+    --_connector: var(--tl-border);
+    --_label: var(--tl-text-secondary);
+
+    margin: 0;
+    padding: 0;
+    /* The `<ol>` is load-bearing for assistive technology but its bullets are
+     * replaced by the markers, so the list styling goes and the semantics stay. */
+    list-style: none;
+    font-size: var(--tl-text-sm);
+  }
+
+  .tl-steps[data-size='sm'] {
+    --_marker: 22px;
+    font-size: var(--tl-text-xs);
+  }
+
+  /* -- Status --------------------------------------------------------------
+   * The connector is coloured by the step it leaves, so the accent runs
+   * continuously from the first step up to the one in progress and stops there.
+   * That gives the component a second, purely positional reading of progress
+   * that does not depend on decoding any individual marker. */
+  .tl-steps__step[data-status='complete'] {
+    --_marker-bg: var(--tl-accent);
+    --_marker-fg: var(--tl-text-on-accent);
+    --_marker-border: transparent;
+    --_connector: var(--tl-accent);
+    --_label: var(--tl-text);
+  }
+
+  .tl-steps__step[data-status='current'] {
+    --_marker-bg: var(--tl-surface);
+    --_marker-fg: var(--tl-accent-emphasis);
+    --_marker-border: var(--tl-accent-border);
+    --_label: var(--tl-text);
+  }
+
+  .tl-steps__step[data-status='error'] {
+    --_marker-bg: var(--tl-danger-bg);
+    --_marker-fg: var(--tl-danger-fg);
+    --_marker-border: var(--tl-danger-border);
+    --_label: var(--tl-danger-fg);
+  }
+
+  /* -- Parts --------------------------------------------------------------- */
+  .tl-steps__marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+
+    width: var(--_marker);
+    height: var(--_marker);
+
+    /* The number is set a shade smaller than the label so a two-digit step does
+     * not crowd the disc; the glyph inherits `em` and scales with it. */
+    font-size: 0.85em;
+    font-weight: var(--tl-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+
+    color: var(--_marker-fg);
+    background: var(--_marker-bg);
+    border: 2px solid var(--_marker-border);
+    border-radius: var(--tl-radius-round);
+  }
+
+  /* A halo on the active step. It is redundant with the border colour on
+   * purpose — the halo changes the marker's apparent size, which is a
+   * non-colour difference between "current" and "upcoming". */
+  .tl-steps__step[data-status='current'] > .tl-steps__marker {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--tl-accent) 24%, transparent);
+  }
+
+  .tl-steps__content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-1);
+    min-width: 0;
+    color: var(--_label);
+  }
+
+  .tl-steps__label {
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-snug);
+  }
+
+  /* Weight, not colour. A user who cannot separate the amber marker from the
+   * neutral one can still see which label is bold. */
+  .tl-steps__step[data-status='current'] .tl-steps__label {
+    font-weight: var(--tl-weight-semibold);
+  }
+
+  .tl-steps__description {
+    color: var(--tl-text-muted);
+    font-size: 0.92em;
+    line-height: var(--tl-leading-snug);
+    text-wrap: pretty;
+  }
+
+  /* -- Horizontal ---------------------------------------------------------- */
+  .tl-steps[data-orientation='horizontal'] {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-4);
+  }
+
+  .tl-steps[data-orientation='horizontal'] > .tl-steps__step {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-4);
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* The last step has no connector to absorb slack, so it must not claim an
+   * equal share of the row — otherwise the final label floats in the middle of
+   * a wide empty column. */
+  .tl-steps[data-orientation='horizontal'] > .tl-steps__step:last-child {
+    flex: 0 1 auto;
+  }
+
+  .tl-steps[data-orientation='horizontal'] > .tl-steps__step:not(:last-child)::after {
+    content: '';
+    flex: 1 1 var(--tl-space-9);
+    min-width: var(--tl-space-6);
+    height: 2px;
+    /* Aligned to the marker's centre rather than the row's. With a description
+     * present the row is much taller than the disc, and a line centred on the
+     * row would meet the marker somewhere near its bottom edge. */
+    margin-block-start: calc(var(--_marker) / 2 - 1px);
+    margin-inline-start: var(--tl-space-2);
+    background: var(--_connector);
+    border-radius: var(--tl-radius-round);
+  }
+
+  /* -- Vertical ------------------------------------------------------------ */
+  .tl-steps[data-orientation='vertical'] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tl-steps[data-orientation='vertical'] > .tl-steps__step {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-6);
+    padding-block-end: var(--tl-space-9);
+  }
+
+  .tl-steps[data-orientation='vertical'] > .tl-steps__step:last-child {
+    padding-block-end: 0;
+  }
+
+  /* Absolutely positioned rather than a grid track: the connector has to span
+   * from under one marker to the next whatever height the description gives the
+   * row, and an auto-sized track next to a spanning item collapses to zero as
+   * often as not. `inset-inline-start` keeps it on the correct side in RTL. */
+  .tl-steps[data-orientation='vertical'] > .tl-steps__step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    inset-block: calc(var(--_marker) + var(--tl-space-2)) var(--tl-space-2);
+    inset-inline-start: calc(var(--_marker) / 2 - 1px);
+    width: 2px;
+    background: var(--_connector);
+    border-radius: var(--tl-radius-round);
+  }
+
+  /* Forced colors throws away every fill, so a completed marker and an upcoming
+   * one would be two identical empty circles. They are not: one contains a
+   * check and the other a number, which is exactly why the glyph — and not the
+   * colour — is what carries the status. The border keeps the disc visible. */
+  @media (forced-colors: active) {
+    .tl-steps__marker {
+      border-color: CanvasText;
+    }
+
+    .tl-steps__step[data-status='current'] > .tl-steps__marker {
+      box-shadow: none;
+      outline: 1px solid CanvasText;
+      outline-offset: 2px;
+    }
+  }
+}

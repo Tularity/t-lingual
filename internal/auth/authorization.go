@@ -1,9 +1,12 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -17,7 +20,8 @@ import (
 const (
 	// AuthorizationScopePasskeyManagement is the backwards-compatible default
 	// scope used when a passkey authorization ceremony omits a scope.
-	AuthorizationScopePasskeyManagement = store.ActionPasskeyManagement
+	AuthorizationScopePasskeyManagement  = store.ActionPasskeyManagement
+	AuthorizationScopeRecoveryPasskeyAdd = "passkeys:add"
 
 	authorizationTokenVersion = "tlpa1"
 	maxAuthorizationScopeLen  = 512
@@ -39,12 +43,19 @@ func NormalizeAuthorizationScope(raw string) (string, error) {
 	if raw == AuthorizationScopePasskeyManagement {
 		return raw, nil
 	}
+	if raw == AuthorizationScopeRecoveryPasskeyAdd {
+		return raw, nil
+	}
 
 	parts := strings.Split(raw, ":")
 	if len(parts) < 4 || parts[0] != "admin" {
 		return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
 	}
 	switch {
+	case len(parts) == 4 && parts[1] == "providers" && parts[2] == "update":
+		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(parts[3]) {
+			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
+		}
 	case len(parts) == 4 && parts[1] == "invitation" && parts[2] == "create":
 		hours, err := strconv.Atoi(parts[3])
 		if err != nil || hours < 0 || hours > 720 || strconv.Itoa(hours) != parts[3] {
@@ -52,6 +63,14 @@ func NormalizeAuthorizationScope(raw string) (string, error) {
 		}
 	case len(parts) == 4 && parts[1] == "invitation" && parts[2] == "revoke":
 		if !validAuthorizationTarget(parts[3], "inv") {
+			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
+		}
+	case len(parts) == 4 && parts[1] == "code" && parts[2] == "create":
+		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(parts[3]) {
+			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
+		}
+	case len(parts) == 4 && parts[1] == "site-settings" && parts[2] == "update":
+		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(parts[3]) {
 			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
 		}
 	case len(parts) == 6 && parts[1] == "user" && parts[2] == "update":
@@ -72,6 +91,36 @@ func NormalizeAuthorizationScope(raw string) (string, error) {
 // value; positive values match the validated JSON field directly.
 func AdminInvitationCreateAuthorizationScope(hours int) (string, error) {
 	return NormalizeAuthorizationScope(fmt.Sprintf("admin:invitation:create:%d", hours))
+}
+
+// AdminCodeCreateAuthorizationScope binds every caller-supplied schedule and
+// target field. Frontends hash UTF-8 `kind|targetUserId|notBefore|expiresAt|ttlSeconds`
+// with SHA-256 and prefix the lowercase hex digest with admin:code:create:.
+func AdminCodeCreateAuthorizationScope(kind, target, notBefore, expiresAt string, ttlSeconds int) (string, error) {
+	if strings.ContainsAny(kind+target+notBefore+expiresAt, "|\r\n") || ttlSeconds < 0 {
+		return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
+	}
+	payload := fmt.Sprintf("%s|%s|%s|%s|%d", kind, target, notBefore, expiresAt, ttlSeconds)
+	hash := sha256.Sum256([]byte(payload))
+	return NormalizeAuthorizationScope(fmt.Sprintf("admin:code:create:%x", hash))
+}
+
+// AdminSiteSettingsAuthorizationScope hashes the compact UTF-8 JSON object
+// with keys in this order: registrationHelpMarkdown, codeAttemptsPerMinute.
+// HTML escaping is disabled so JS JSON.stringify of those two fields matches.
+func AdminSiteSettingsAuthorizationScope(markdown string, attempts int) (string, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(struct {
+		RegistrationHelpMarkdown string `json:"registrationHelpMarkdown"`
+		CodeAttemptsPerMinute    int    `json:"codeAttemptsPerMinute"`
+	}{markdown, attempts}); err != nil {
+		return "", err
+	}
+	encoded := bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'})
+	hash := sha256.Sum256(encoded)
+	return NormalizeAuthorizationScope(fmt.Sprintf("admin:site-settings:update:%x", hash))
 }
 
 func AdminInvitationRevokeAuthorizationScope(invitationID string) (string, error) {

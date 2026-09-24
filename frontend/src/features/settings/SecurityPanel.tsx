@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { BrowserSession, Passkey } from '../../api/contracts'
 import { Badge, Button, Card, Dialog, EmptyState, Icon } from '../../design-system'
-import { formatDate } from '../../app/utils'
+import { useI18n } from '../../app/i18n'
 
 interface SecurityPanelProps {
   passkeys: Passkey[]
@@ -31,6 +31,7 @@ export function SecurityPanel({
   onRevokeSession,
   onRevokeOthers,
 }: SecurityPanelProps) {
+  const { t, formatDate: localDate } = useI18n()
   const [targetSession, setTargetSession] = useState<BrowserSession | null>(null)
   const [revokeOthersOpen, setRevokeOthersOpen] = useState(false)
   const otherSessionCount = browserSessions.filter((session) => !session.current).length
@@ -49,18 +50,18 @@ export function SecurityPanel({
     <section className="security-settings" aria-labelledby="security-title">
       <div className="settings-heading settings-heading--action">
         <div>
-          <h2 id="security-title">Your passkeys</h2>
-          <p>Passkeys are the only way to sign in. Keep at least two on different devices.</p>
+          <h2 id="security-title">{t("Your passkeys")}</h2>
+          <p>{t("Keep passkeys on two devices. An administrator can provide a temporary sign-in code if you lose access.")}</p>
         </div>
-        <Button variant="primary" icon="plus" disabled={securityActionBusy} onClick={onAddPasskey}>Add passkey</Button>
+        <Button variant="primary" icon="plus" disabled={securityActionBusy} onClick={onAddPasskey}>{t("Add passkey")}</Button>
       </div>
       {passkeys.length === 0 ? (
         <Card>
           <EmptyState
             icon="key"
-            title="No passkeys found"
-            description="This account needs a passkey before it can sign in again."
-            action={<Button variant="primary" disabled={securityActionBusy} onClick={onAddPasskey}>Add passkey</Button>}
+            title={t("No passkeys found")}
+            description={t("This account needs a passkey before it can sign in again.")}
+            action={<Button variant="primary" disabled={securityActionBusy} onClick={onAddPasskey}>{t("Add passkey")}</Button>}
           />
         </Card>
       ) : (
@@ -75,20 +76,20 @@ export function SecurityPanel({
                 </span>
                 <div>
                   <strong>
-                    <bdi>{passkey.name}</bdi> {passkey.compromisedAt && <Badge tone="danger">Quarantined</Badge>}
+                    <bdi>{passkey.name}</bdi> {passkey.compromisedAt && <Badge tone="danger">{t("Quarantined")}</Badge>}
                   </strong>
                   <p>
                     {passkey.compromisedAt
-                      ? `A counter anomaly was detected ${formatDate(passkey.compromisedAt)}. This passkey cannot sign in again.`
-                      : <>Added {formatDate(passkey.createdAt, { dateStyle: 'medium' })} · {passkey.lastUsedAt ? `Last used ${formatDate(passkey.lastUsedAt)}` : 'Never used'}</>}
+                      ? t('A counter anomaly was detected {date}. This passkey cannot sign in again.', { date: localDate(passkey.compromisedAt) })
+                      : <>{t("Added")} {localDate(passkey.createdAt, { dateStyle: 'medium' })} · {passkey.lastUsedAt ? t('Last used {date}', { date: localDate(passkey.lastUsedAt) }) : t('Never used')}</>}
                   </p>
                 </div>
-                {!removable && <span id={lockedReasonId} className="sr-only">Keep at least one healthy passkey that can sign in.</span>}
+                {!removable && <span id={lockedReasonId} className="sr-only">{t("Keep at least one healthy passkey that can sign in.")}</span>}
                 <Button
                   variant="ghost"
                   icon="trash"
                   iconOnly
-                  aria-label={`Remove ${passkey.name}`}
+                  aria-label={t('Remove {name}', { name: passkey.name })}
                   aria-describedby={removable ? undefined : lockedReasonId}
                   disabled={!removable || securityActionBusy}
                   onClick={() => onRemovePasskey(passkey)}
@@ -101,10 +102,10 @@ export function SecurityPanel({
 
       <div className="settings-heading settings-heading--action security-sessions-heading">
         <div>
-          <h2>Signed-in browsers</h2>
-          <p>Review where your account is active. Session tokens are never shown here.</p>
+          <h2>{t("Signed-in browsers")}</h2>
+          <p>{t("Review where your account is active. Session tokens are never shown here.")}</p>
         </div>
-        {otherSessionCount === 0 && <span id="revoke-others-reason" className="sr-only">No other browsers are signed in.</span>}
+        {otherSessionCount === 0 && <span id="revoke-others-reason" className="sr-only">{t("No other browsers are signed in.")}</span>}
         <Button
           variant="secondary"
           icon="shield"
@@ -112,15 +113,15 @@ export function SecurityPanel({
           aria-describedby={otherSessionCount === 0 ? 'revoke-others-reason' : undefined}
           onClick={() => setRevokeOthersOpen(true)}
         >
-          Sign out other browsers
+          {t("Sign out other browsers")}
         </Button>
       </div>
       {browserSessions.length === 0 ? (
         <Card>
           <EmptyState
             icon="shield"
-            title="No active browsers"
-            description="This sign-in may have expired. Refresh the page or sign in again."
+            title={t("No active browsers")}
+            description={t("This sign-in may have expired. Refresh the page or sign in again.")}
           />
         </Card>
       ) : (
@@ -132,13 +133,13 @@ export function SecurityPanel({
               </span>
               <div className="browser-session-row__body">
                 <div className="browser-session-row__title">
-                  <strong><bdi>{session.userAgent || 'Unknown browser'}</bdi></strong>
-                  {session.current && <Badge tone="success">This browser</Badge>}
+                  <strong><bdi>{session.userAgent || t('Unknown browser')}</bdi></strong>
+                  {session.current && <Badge tone="success">{t("This browser")}</Badge>}
                 </div>
                 <dl className="browser-session-meta">
-                  <div><dt>IP address</dt><dd><bdi>{session.ipAddress || 'Unavailable'}</bdi></dd></div>
-                  <div><dt>Last active</dt><dd>{formatDate(session.lastSeen)}</dd></div>
-                  <div><dt>Expires</dt><dd>{formatDate(session.expiresAt, { dateStyle: 'medium' })}</dd></div>
+                  <div><dt>{t("IP address")}</dt><dd><bdi>{session.ipAddress || t('Unavailable')}</bdi></dd></div>
+                  <div><dt>{t("Last active")}</dt><dd>{localDate(session.lastSeen)}</dd></div>
+                  <div><dt>{t("Expires")}</dt><dd>{localDate(session.expiresAt, { dateStyle: 'medium' })}</dd></div>
                 </dl>
               </div>
               <Button
@@ -147,10 +148,10 @@ export function SecurityPanel({
                 icon="logout"
                 loading={sessionBusyId === session.id}
                 disabled={securityActionBusy && sessionBusyId !== session.id}
-                aria-label={session.current ? 'Sign out this browser' : `Sign out ${session.userAgent || 'unknown browser'}`}
+                aria-label={session.current ? t('Sign out this browser') : t('Sign out {browser}', { browser: session.userAgent || t('unknown browser') })}
                 onClick={() => setTargetSession(session)}
               >
-                Sign out
+                {t("Sign out")}
               </Button>
             </article>
           ))}
@@ -160,27 +161,27 @@ export function SecurityPanel({
       <Dialog
         open={targetSession !== null}
         onClose={() => !sessionActionBusy && setTargetSession(null)}
-        title={targetSession?.current ? 'Sign out this browser?' : 'Sign out this browser session?'}
+        title={targetSession?.current ? t('Sign out this browser?') : t('Sign out this browser session?')}
         description={targetSession?.current
-          ? 'Your current session will end immediately and you’ll return to passkey sign-in.'
-          : 'Verify a passkey to protect your other signed-in browsers from a stolen session cookie.'}
+          ? t('Your current session will end immediately and you’ll return to passkey sign-in.')
+          : t('Verify a passkey to protect your other signed-in browsers from a stolen session cookie.')}
         footer={<>
-          <Button disabled={sessionActionBusy} onClick={() => setTargetSession(null)}>Cancel</Button>
+          <Button disabled={sessionActionBusy} onClick={() => setTargetSession(null)}>{t("Cancel")}</Button>
           <Button
             variant="danger"
             icon={targetSession?.current ? 'logout' : 'key'}
             loading={targetSession !== null && sessionBusyId === targetSession.id}
             onClick={() => void confirmSessionRevoke()}
           >
-            {targetSession?.current ? 'Sign out' : 'Verify and sign out'}
+            {targetSession?.current ? t('Sign out') : t('Verify and sign out')}
           </Button>
         </>}
       >
         <div className="session-revoke-summary">
           <Icon name="user" size={20} />
           <div>
-            <strong><bdi>{targetSession?.userAgent || 'Unknown browser'}</bdi></strong>
-            <span><bdi>{targetSession?.ipAddress || 'IP unavailable'}</bdi></span>
+            <strong><bdi>{targetSession?.userAgent || t('Unknown browser')}</bdi></strong>
+            <span><bdi>{targetSession?.ipAddress || t('IP unavailable')}</bdi></span>
           </div>
         </div>
       </Dialog>
@@ -188,18 +189,18 @@ export function SecurityPanel({
       <Dialog
         open={revokeOthersOpen}
         onClose={() => !revokeOthersBusy && setRevokeOthersOpen(false)}
-        title="Sign out every other browser?"
-        description="Verify a passkey to end all other browser sessions immediately. This browser will stay signed in."
+        title={t("Sign out every other browser?")}
+        description={t("Verify a passkey to end all other browser sessions immediately. This browser will stay signed in.")}
         footer={<>
-          <Button disabled={revokeOthersBusy} onClick={() => setRevokeOthersOpen(false)}>Cancel</Button>
+          <Button disabled={revokeOthersBusy} onClick={() => setRevokeOthersOpen(false)}>{t("Cancel")}</Button>
           <Button variant="danger" icon="key" loading={revokeOthersBusy} onClick={() => void confirmRevokeOthers()}>
-            Verify and sign out {otherSessionCount}
+            {t("Verify and sign out")} {otherSessionCount}
           </Button>
         </>}
       >
         <div className="security-callout">
           <Icon name="shield" size={20} />
-          <p>Any live interpretation streams opened in those browsers will also be disconnected.</p>
+          <p>{t("Any live interpretation streams opened in those browsers will also be disconnected.")}</p>
         </div>
       </Dialog>
     </section>

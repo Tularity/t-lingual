@@ -1,0 +1,65 @@
+@layer tl.components {
+  .tl-meter {
+    --_track: var(--tl-surface-sunken);
+    --_fill: var(--tl-accent);
+    --_thickness: 8px;
+
+    display: block;
+    position: relative;
+    width: 100%;
+    height: var(--_thickness);
+    overflow: hidden;
+
+    background: var(--_track);
+    border-radius: var(--tl-radius-round);
+  }
+
+  .tl-meter[data-size='sm'] { --_thickness: 5px; }
+  .tl-meter[data-size='md'] { --_thickness: 8px; }
+  .tl-meter[data-size='lg'] { --_thickness: 12px; }
+
+  /* `neutral` is what a meter with no thresholds gets: the accent states a
+   * level without also claiming it is good or bad. */
+  .tl-meter[data-level='neutral']    { --_fill: var(--tl-accent); }
+  .tl-meter[data-level='optimum']    { --_fill: var(--tl-success-solid); }
+  .tl-meter[data-level='suboptimal'] { --_fill: var(--tl-warning-solid); }
+  .tl-meter[data-level='poor']       { --_fill: var(--tl-danger-solid); }
+
+  .tl-meter__fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--_fill);
+    border-radius: inherit;
+
+    transform: scaleX(var(--_fraction, 0));
+    transform-origin: left center;
+    /* Shorter than Progress's transition. A meter is a reading, and a reading
+     * that glides to its new position for a quarter of a second looks like it
+     * is still settling — which for an audio level or a live confidence score
+     * is exactly the wrong impression. The band change is a colour highlight,
+     * so it takes the control recipe like every other state tint. */
+    transition:
+      var(--tl-transition-control),
+      transform var(--tl-duration-xs) var(--tl-ease-out);
+  }
+
+  [dir='rtl'] .tl-meter__fill {
+    transform-origin: right center;
+  }
+
+  /* The band is carried entirely by background-color, which forced colors
+   * strips. The fill takes the system highlight and the track becomes an
+   * outlined box, so the reading survives even though the band does not — the
+   * length is the value, and `aria-valuetext` still carries the specifics. */
+  @media (forced-colors: active) {
+    .tl-meter {
+      border: 1px solid CanvasText;
+      background: Canvas;
+    }
+
+    .tl-meter__fill {
+      background: Highlight;
+    }
+  }
+}

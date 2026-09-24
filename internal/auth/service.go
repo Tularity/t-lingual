@@ -1,6 +1,5 @@
-// Package auth implements passkey-only registration, discoverable login, and
-// opaque browser sessions. There is intentionally no password abstraction in
-// this package.
+// Package auth implements passkey registration, discoverable login, recovery
+// code login, and opaque browser sessions. It has no password abstraction.
 package auth
 
 import (
@@ -128,10 +127,11 @@ func (s *Service) revokeLiveUser(userID string) {
 }
 
 type RegistrationInput struct {
-	InvitationCode string
-	Username       string
-	DisplayName    string
-	CredentialName string
+	InvitationCode     string
+	RegistrationTicket string
+	Username           string
+	DisplayName        string
+	CredentialName     string
 }
 
 type BeginResult struct {
@@ -152,13 +152,14 @@ type LoginResult struct {
 }
 
 type pendingRegistration struct {
-	User               domain.User `json:"user"`
-	WebAuthnID         []byte      `json:"webAuthnId,omitempty"`
-	BrowserSessionID   string      `json:"browserSessionId,omitempty"`
-	CredentialName     string      `json:"credentialName"`
-	InviteDigest       []byte      `json:"inviteDigest"`
-	InviteBucket       uint16      `json:"inviteBucket"`
-	AuthorizationScope string      `json:"authorizationScope,omitempty"`
+	User                domain.User `json:"user"`
+	WebAuthnID          []byte      `json:"webAuthnId,omitempty"`
+	BrowserSessionID    string      `json:"browserSessionId,omitempty"`
+	CredentialName      string      `json:"credentialName"`
+	InviteDigest        []byte      `json:"inviteDigest"`
+	InviteBucket        uint16      `json:"inviteBucket"`
+	AuthorizationScope  string      `json:"authorizationScope,omitempty"`
+	RecoveryGrantDigest []byte      `json:"recoveryGrantDigest,omitempty"`
 }
 
 type AuthorizationResult struct {
@@ -168,10 +169,14 @@ type AuthorizationResult struct {
 
 func (s *Service) BeginRegistration(ctx context.Context, input RegistrationInput) (BeginResult, error) {
 	input.InvitationCode = strings.TrimSpace(input.InvitationCode)
+	input.RegistrationTicket = strings.TrimSpace(input.RegistrationTicket)
 	input.Username = strings.TrimSpace(input.Username)
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.CredentialName = strings.TrimSpace(input.CredentialName)
-	if !invitePattern.MatchString(input.InvitationCode) {
+	if (input.InvitationCode == "") == (input.RegistrationTicket == "") {
+		return BeginResult{}, ErrInvalidInvitation
+	}
+	if input.InvitationCode != "" && !invitePattern.MatchString(input.InvitationCode) {
 		return BeginResult{}, ErrInvalidInvitation
 	}
 	if !usernamePattern.MatchString(input.Username) {
@@ -187,7 +192,18 @@ func (s *Service) BeginRegistration(ctx context.Context, input RegistrationInput
 	input.CredentialName = credentialName
 
 	now := s.now().UTC()
-	digest := s.keyring.InvitationDigest(input.InvitationCode)
+	var digest [32]byte
+	var bucket uint16
+	if input.RegistrationTicket != "" {
+		var ticketErr error
+		digest, bucket, ticketErr = s.openRegistrationTicket(ctx, input.RegistrationTicket, now)
+		if ticketErr != nil {
+			return BeginResult{}, ErrInvalidInvitation
+		}
+	} else {
+		digest = s.keyring.InvitationDigest(input.InvitationCode)
+		bucket = s.keyring.InvitationBucket(input.InvitationCode)
+	}
 
 	userID, err := id.New("usr")
 	if err != nil {
@@ -224,7 +240,7 @@ func (s *Service) BeginRegistration(ctx context.Context, input RegistrationInput
 		WebAuthnID:     append([]byte(nil), user.WebAuthnID...),
 		CredentialName: input.CredentialName,
 		InviteDigest:   digest[:],
-		InviteBucket:   s.keyring.InvitationBucket(input.InvitationCode),
+		InviteBucket:   bucket,
 	}
 	return s.persistCeremony(ctx, store.CeremonyRegistration, sessionData, pending, nil, "", "", options)
 }
@@ -250,7 +266,19 @@ func (s *Service) FinishRegistration(ctx context.Context, ceremonyToken string, 
 	if err != nil {
 		return LoginResult{}, err
 	}
-	if _, err := s.store.CompleteRegistration(
+	sessionID, err := id.New("ses")
+	if err != nil {
+		return LoginResult{}, err
+	}
+	sessionToken, err := id.Secret(32)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	browserSession := domain.BrowserSession{ID: sessionID, UserID: pending.User.ID,
+		CreatedAt: now, ExpiresAt: now.Add(s.sessionTTL), LastSeen: now,
+		UserAgent: truncate(strings.TrimSpace(metadata.UserAgent), 512),
+		IPAddress: truncate(strings.TrimSpace(metadata.IPAddress), 64)}
+	if _, err := s.store.CompleteRegistrationWithSession(
 		ctx,
 		pending.InviteDigest,
 		pending.InviteBucket,
@@ -259,6 +287,8 @@ func (s *Service) FinishRegistration(ctx context.Context, ceremonyToken string, 
 		credentialRecord,
 		invalidInvitationMaxFailures,
 		auditEventID,
+		browserSession,
+		sessionToken,
 	); err != nil {
 		if errors.Is(err, store.ErrInvalidInvite) {
 			return LoginResult{}, ErrInvalidInvitation
@@ -268,7 +298,7 @@ func (s *Service) FinishRegistration(ctx context.Context, ceremonyToken string, 
 		}
 		return LoginResult{}, err
 	}
-	return s.issueSessionForCredential(ctx, pending.User, credentialRecord.CredentialID, metadata)
+	return LoginResult{User: pending.User, Session: browserSession, SessionToken: sessionToken}, nil
 }
 
 func (s *Service) BeginLogin(ctx context.Context) (BeginResult, error) {
@@ -542,10 +572,15 @@ func (s *Service) BeginAddCredential(
 	if err != nil {
 		return BeginResult{}, err
 	}
-	if err := s.ConsumeCredentialAuthorization(
-		ctx, userID, browserSessionID, authorizationToken,
-		AuthorizationScopePasskeyManagement,
-	); err != nil {
+	var recoveryDigest []byte
+	if scope, valid := authorizationTokenScope(authorizationToken); valid && scope == AuthorizationScopeRecoveryPasskeyAdd {
+		if err := s.store.ValidateRecoveryAddGrant(ctx, authorizationToken, userID, browserSessionID, s.now().UTC()); err != nil {
+			return BeginResult{}, ErrInvalidAuthorization
+		}
+		digest := id.HashSecret(authorizationToken)
+		recoveryDigest = append([]byte(nil), digest[:]...)
+	} else if err := s.ConsumeCredentialAuthorization(ctx, userID, browserSessionID,
+		authorizationToken, AuthorizationScopePasskeyManagement); err != nil {
 		return BeginResult{}, err
 	}
 	user, err := s.store.GetUserByID(ctx, userID)
@@ -575,6 +610,10 @@ func (s *Service) BeginAddCredential(
 	pending := pendingRegistration{
 		User: user, WebAuthnID: append([]byte(nil), user.WebAuthnID...),
 		BrowserSessionID: browserSessionID, CredentialName: credentialName,
+		RecoveryGrantDigest: recoveryDigest,
+	}
+	if len(recoveryDigest) != 0 {
+		pending.AuthorizationScope = AuthorizationScopeRecoveryPasskeyAdd
 	}
 	return s.persistCeremony(ctx, credentialRegistration, sessionData, pending, nil, userID, browserSessionID, options)
 }
@@ -605,9 +644,22 @@ func (s *Service) FinishAddCredential(
 	if err != nil {
 		return domain.Credential{}, err
 	}
-	if err := s.store.CreateCredentialForActiveSession(ctx, record, browserSessionID, s.now().UTC()); err != nil {
+	if (pending.AuthorizationScope == AuthorizationScopeRecoveryPasskeyAdd) != (len(pending.RecoveryGrantDigest) == 32) ||
+		(pending.AuthorizationScope != "" && pending.AuthorizationScope != AuthorizationScopeRecoveryPasskeyAdd) {
+		return domain.Credential{}, ErrInvalidCeremony
+	}
+	if pending.AuthorizationScope == AuthorizationScopeRecoveryPasskeyAdd {
+		err = s.store.CreateCredentialWithRecoveryGrant(ctx, record, browserSessionID,
+			pending.RecoveryGrantDigest, s.now().UTC())
+	} else {
+		err = s.store.CreateCredentialForActiveSession(ctx, record, browserSessionID, s.now().UTC())
+	}
+	if err != nil {
 		if errors.Is(err, store.ErrCapacity) {
 			return domain.Credential{}, ErrCredentialLimit
+		}
+		if pending.AuthorizationScope == AuthorizationScopeRecoveryPasskeyAdd && errors.Is(err, store.ErrNotFound) {
+			return domain.Credential{}, ErrInvalidAuthorization
 		}
 		return domain.Credential{}, err
 	}

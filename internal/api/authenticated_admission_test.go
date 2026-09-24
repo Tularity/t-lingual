@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tularity/t-lingual/internal/config"
 	"github.com/Tularity/t-lingual/internal/domain"
+	"github.com/Tularity/t-lingual/internal/store"
 )
 
 func TestForgedCookieAuthenticationAdmissionIsFailFastAndFair(t *testing.T) {
@@ -167,6 +168,18 @@ func TestLiveRouteReleasesGeneralAdmissionAfterAuthentication(t *testing.T) {
 	server := newAdmissionTestAPI(admission, func(context.Context, string) (domain.User, domain.BrowserSession, error) {
 		return user, session, nil
 	})
+	database, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC()
+	if err := database.CreateUser(context.Background(), domain.User{ID: user.ID, Username: "live-user",
+		WebAuthnID: []byte("live-user-handle"), DisplayName: "Live user", Role: domain.RoleUser,
+		Status: domain.UserActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server.store = database
 	live := &blockingAdmissionLiveHandler{entered: make(chan struct{}), release: make(chan struct{})}
 	server.live = live
 	handler := server.Handler()

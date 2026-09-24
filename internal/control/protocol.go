@@ -16,6 +16,7 @@ import (
 const (
 	StatusPath                 = "/v1/status"
 	InvitationsPath            = "/v1/invitations"
+	CodesPath                  = "/v1/codes"
 	InvitationRevokePath       = "/v1/invitations/revoke"
 	UsersPath                  = "/v1/users"
 	UserRolePath               = "/v1/users/set-role"
@@ -37,6 +38,19 @@ type CreateInvitationRequest struct {
 }
 
 type CreateInvitationResponse struct {
+	Invitation domain.Invitation `json:"invitation"`
+	Code       string            `json:"code"`
+}
+
+type CreateCodeRequest struct {
+	Kind         string `json:"kind"`
+	TargetUserID string `json:"targetUserId,omitempty"`
+	NotBefore    string `json:"notBefore,omitempty"`
+	ExpiresAt    string `json:"expiresAt,omitempty"`
+	TTL          string `json:"ttl,omitempty"`
+}
+
+type CreateCodeResponse struct {
 	Invitation domain.Invitation `json:"invitation"`
 	Code       string            `json:"code"`
 }

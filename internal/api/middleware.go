@@ -135,8 +135,17 @@ func newIPLimiter(limit int, window time.Duration, maxItems int) *ipLimiter {
 }
 
 func (l *ipLimiter) Allow(key string, now time.Time) (bool, time.Duration) {
+	return l.AllowWithLimit(key, now, l.limit)
+}
+
+// AllowWithLimit applies the current policy to the existing fixed-window
+// counters. Changing a site's budget never resets or replaces this map.
+func (l *ipLimiter) AllowWithLimit(key string, now time.Time, limit int) (bool, time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if limit < 1 {
+		limit = 1
+	}
 	if key == "" {
 		key = "unknown"
 	}
@@ -165,7 +174,7 @@ func (l *ipLimiter) Allow(key string, now time.Time) (bool, time.Duration) {
 		entry = ipEntry{start: now, seen: now}
 	}
 	entry.seen = now
-	if entry.count >= l.limit {
+	if entry.count >= limit {
 		l.items[key] = entry
 		retryAfter := l.window - now.Sub(entry.start)
 		if retryAfter < time.Second {
@@ -183,6 +192,7 @@ type authFlow uint8
 const (
 	authLogin authFlow = iota
 	authRegistration
+	authCode
 )
 
 func (a *API) clientAddress(request *http.Request) string {
@@ -251,14 +261,41 @@ func authRateKey(address string) string {
 func (a *API) rateLimitAuth(response http.ResponseWriter, request *http.Request, flow authFlow) error {
 	now := time.Now()
 	limiter := a.loginLimiter
+	limit := 0
+	key := authRateKey(a.clientAddress(request))
 	if flow == authRegistration {
 		limiter = a.registrationLimiter
+	} else if flow == authCode {
+		limiter = a.codeLimiter
+		settings, err := a.store.GetSiteSettings(request.Context())
+		if err != nil {
+			return err
+		}
+		limit = settings.CodeAttemptsPerMinute
+		// The code budget is per resolved client IP. Authentication already
+		// applies the configured trusted-proxy chain in clientAddress.
+		key = a.clientAddress(request)
+		if parsed, err := netip.ParseAddr(key); err != nil {
+			key = "unknown"
+		} else {
+			key = parsed.Unmap().String()
+		}
 	}
-	allowed, retryAfter := limiter.Allow(authRateKey(a.clientAddress(request)), now)
+	var allowed bool
+	var retryAfter time.Duration
+	if flow == authCode {
+		allowed, retryAfter = limiter.AllowWithLimit(key, now, limit)
+	} else {
+		allowed, retryAfter = limiter.Allow(key, now)
+	}
 	if allowed {
 		// Only work admitted by the client-prefix layer consumes the global
 		// budget; repeated cheap local rejections cannot starve every client.
-		allowed, retryAfter = a.authGlobalLimiter.Allow("global", now)
+		global := a.authGlobalLimiter
+		if flow == authCode {
+			global = a.codeGlobalLimiter
+		}
+		allowed, retryAfter = global.Allow("global", now)
 	}
 	if !allowed {
 		seconds := int((retryAfter + time.Second - 1) / time.Second)

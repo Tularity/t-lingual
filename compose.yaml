@@ -7,30 +7,35 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
       args:
         VERSION: ${TLINGUAL_VERSION:-development}
         REVISION: ${TLINGUAL_REVISION:-unknown}
         BUILD_DATE: ${TLINGUAL_BUILD_DATE:-1970-01-01T00:00:00Z}
     environment:
-      TLINGUAL_ENV: production
+      TLINGUAL_ENV: ${TLINGUAL_ENV:-production}
       TLINGUAL_LISTEN_ADDR: ":8080"
       TLINGUAL_PUBLIC_URL: ${TLINGUAL_PUBLIC_URL:?Set TLINGUAL_PUBLIC_URL to the public HTTPS origin}
       TLINGUAL_RP_ORIGINS: ${TLINGUAL_RP_ORIGINS:-}
-      TLINGUAL_TRUSTED_PROXY_CIDRS: ${TLINGUAL_TRUSTED_PROXY_CIDRS:?Set the exact CIDR(s) of the HTTPS reverse proxy peers}
+      TLINGUAL_TRUSTED_PROXY_CIDRS: ${TLINGUAL_TRUSTED_PROXY_CIDRS:-}
       TLINGUAL_DATA_PATH: /app/data/t-lingual.db
       TLINGUAL_MASTER_KEY_PATH: /app/data/master.key
       TLINGUAL_ADMIN_SOCKET: /app/data/admin.sock
       TLINGUAL_WEB_ROOT: /app/web
       # These are separately deployed APIs. This Compose project runs no model.
-      TLINGUAL_ASR_BASE_URL: ${TLINGUAL_ASR_BASE_URL:?Set TLINGUAL_ASR_BASE_URL to the external ASR API}
+      TLINGUAL_ASR_BASE_URL: ${TLINGUAL_ASR_BASE_URL:-}
       TLINGUAL_ASR_API_KEY: ${TLINGUAL_ASR_API_KEY:-}
-      TLINGUAL_TRANSLATOR_BASE_URL: ${TLINGUAL_TRANSLATOR_BASE_URL:?Set TLINGUAL_TRANSLATOR_BASE_URL to the external translation API}
+      TLINGUAL_TRANSLATOR_BASE_URL: ${TLINGUAL_TRANSLATOR_BASE_URL:-}
       TLINGUAL_TRANSLATOR_API_KEY: ${TLINGUAL_TRANSLATOR_API_KEY:-}
       TLINGUAL_ALLOW_INSECURE_PROVIDERS: ${TLINGUAL_ALLOW_INSECURE_PROVIDERS:-false}
     ports:
       - "${TLINGUAL_BIND_ADDRESS:-127.0.0.1}:${TLINGUAL_PORT:-8088}:8080"
     volumes:
-      - tlingual-data:/app/data
+      - type: bind
+        source: ${TLINGUAL_DATA_DIR:-E:/docker-data/t-lingual}
+        target: /app/data
+        bind:
+          create_host_path: false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     init: true
@@ -49,7 +54,3 @@ services:
       options:
         max-size: 10m
         max-file: "3"
-
-volumes:
-  tlingual-data:
-    name: t-lingual-data

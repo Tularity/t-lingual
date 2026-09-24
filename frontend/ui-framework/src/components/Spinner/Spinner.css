@@ -1,0 +1,38 @@
+@layer tl.components {
+  /* The mark draws itself at an exact pixel size, so this wrapper sets none —
+   * a `width` here would scale a drawing that was already sized, defeating
+   * the optical cut that makes the small sizes legible. Sizing, colour and
+   * forced colours are all the mark's business; see Mark.css, and nothing of
+   * that is restated here, because a second copy of a rule is a second thing
+   * to keep in sync. The single exception is the reduced-motion pulse below,
+   * which Mark.css deliberately does not declare. */
+  .tl-spinner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    vertical-align: middle;
+    color: inherit;
+  }
+
+  /* Deliberately kept: a spinner inside a button must keep pulsing under the
+   * preference, because a busy control that goes still reads as a dead one.
+   * The mark's loops are gated on `no-preference`; this re-declares the one
+   * loop whose motion is the message. */
+  @media (prefers-reduced-motion: reduce) {
+    .tl-spinner .tl-mark[data-loading='pulse'] .tl-mark__line {
+      animation: tl-mark-pulse var(--_tempo-pulse) ease-in-out infinite;
+      animation-delay: calc(
+        var(--_tempo-pulse) * (var(--_lines, 1) - var(--_line, 0)) * -0.09
+      );
+    }
+
+    /* The re-declaration above outranks Mark.css's exit cancel by one class,
+     * so a spinner inside a closing overlay would hold it on screen until the
+     * presence backstop. Repeated here at the higher specificity, after the
+     * loop so source order settles the tie. */
+    [data-tl][data-state='exiting'] .tl-spinner .tl-mark__line {
+      animation: none;
+    }
+  }
+}

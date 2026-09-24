@@ -1,0 +1,148 @@
+@layer tl.components {
+  .tl-card {
+    --_bg: var(--tl-surface);
+    --_fg: var(--tl-text);
+    --_border: var(--tl-border-subtle);
+    --_shadow: var(--tl-elevation-xs);
+    --_bg-hover: var(--tl-surface-hover);
+    --_bg-active: var(--tl-surface-active);
+    --_pad: var(--tl-space-10);
+
+    position: relative;
+    min-width: 0;
+
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-lg);
+    box-shadow: var(--_shadow);
+
+    transition: var(--tl-transition-control);
+  }
+
+  /* A card built from parts already has padding on each part, and adding it to
+   * the shell as well doubles the inset. `:has()` lets the shell pad itself
+   * only in the plain `<Card>text</Card>` case, which is the one that otherwise
+   * renders text hard against the border. If `:has()` is unavailable the shell
+   * simply does not pad — a degradation, not a break. */
+  .tl-card:not(:has(> .tl-card__header, > .tl-card__body, > .tl-card__footer)) {
+    padding: var(--_pad);
+  }
+
+  /* -- Padding ------------------------------------------------------------- */
+  .tl-card[data-padding='none'] { --_pad: 0; }
+  .tl-card[data-padding='sm']   { --_pad: var(--tl-space-6); }
+  .tl-card[data-padding='md']   { --_pad: var(--tl-space-10); }
+  .tl-card[data-padding='lg']   { --_pad: var(--tl-space-12); }
+
+  /* -- Variants ------------------------------------------------------------ */
+  .tl-card[data-variant='default'] {
+    --_bg: var(--tl-surface);
+    --_border: var(--tl-border-subtle);
+    --_shadow: var(--tl-elevation-xs);
+  }
+
+  .tl-card[data-variant='raised'] {
+    --_bg: var(--tl-surface-elevated);
+    --_border: var(--tl-border-subtle);
+    --_shadow: var(--tl-elevation-md);
+  }
+
+  /* Sunken reads as "inside" the page, so it drops the shadow entirely — a
+   * recessed surface with a drop shadow is a contradiction the eye notices even
+   * when it cannot name it. */
+  .tl-card[data-variant='sunken'] {
+    --_bg: var(--tl-surface-sunken);
+    --_border: transparent;
+    --_shadow: none;
+    --_bg-hover: var(--tl-surface-active);
+  }
+
+  .tl-card[data-variant='outline'] {
+    --_bg: transparent;
+    --_border: var(--tl-border);
+    --_shadow: none;
+  }
+
+  /* -- Interactive ---------------------------------------------------------- */
+  .tl-card[data-interactive] {
+    cursor: pointer;
+    text-align: inherit;
+    text-decoration: none;
+    /* The card is a whole tap target, so the browser should not wait 300ms to
+     * find out whether the gesture was a double-tap zoom. */
+    touch-action: manipulation;
+  }
+
+  .tl-card[data-interactive]:hover:not([aria-disabled='true']) {
+    background: var(--_bg-hover);
+    border-color: var(--tl-border);
+  }
+
+  .tl-card[data-interactive]:active:not([aria-disabled='true']) {
+    background: var(--_bg-active);
+    /* Half a pixel of travel rather than a scale: scaling a bordered box
+     * resamples the hairline border and makes the whole card shimmer. */
+    transform: translateY(0.5px);
+  }
+
+  .tl-card[data-interactive][aria-disabled='true'] {
+    --_bg: var(--tl-surface-disabled);
+    --_fg: var(--tl-text-disabled);
+    --_shadow: none;
+    cursor: not-allowed;
+  }
+
+  /* -- Parts ----------------------------------------------------------------
+   * Each part pads itself from the shell's `--_pad`, so one `padding` prop on
+   * the Card keeps the header, body and footer in step. The block padding is
+   * pulled in slightly on the header and footer so a card of parts is not
+   * noticeably taller than the same content in a plain card. */
+  .tl-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--tl-space-6);
+    min-width: 0;
+    padding: var(--_pad) var(--_pad) 0;
+  }
+
+  .tl-card__body {
+    min-width: 0;
+    padding: var(--_pad);
+  }
+
+  /* Only collapse the body's own top padding when a header is actually sitting
+   * above it, otherwise a body-only card loses its top inset. */
+  .tl-card__header + .tl-card__body {
+    padding-block-start: var(--tl-space-6);
+  }
+
+  .tl-card__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tl-space-6);
+    min-width: 0;
+    padding: var(--tl-space-6) var(--_pad) var(--_pad);
+    border-block-start: 1px solid var(--tl-divider);
+  }
+
+  /* Forced colors strips every background, so `raised` and `sunken` become the
+   * same flat box as `default` and the elevation language disappears with them.
+   * A visible border is the only thing left that can carry the distinction —
+   * and the same is true of the disabled state, which is otherwise a dimmer
+   * background and a dimmer text colour, both of which are overridden. */
+  @media (forced-colors: active) {
+    .tl-card {
+      border-color: CanvasText;
+    }
+    .tl-card[data-interactive]:hover:not([aria-disabled='true']) {
+      border-color: Highlight;
+    }
+    .tl-card[data-interactive][aria-disabled='true'] {
+      color: GrayText;
+      border-color: GrayText;
+    }
+  }
+}

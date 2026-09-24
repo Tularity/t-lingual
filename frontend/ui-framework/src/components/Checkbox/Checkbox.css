@@ -1,0 +1,194 @@
+@layer tl.components {
+  .tl-checkbox {
+    /* The styling contract: sizes and states below only reassign these. */
+    --_size: 16px;
+    --_fs: var(--tl-text-sm);
+    --_radius: var(--tl-radius-xs);
+    --_target: 24px;
+    --_bg: var(--tl-field-bg);
+    --_border: var(--tl-field-border);
+    --_border-hover: var(--tl-field-border-hover);
+    --_fill: var(--tl-accent);
+    --_fill-hover: var(--tl-accent-hover);
+    --_glyph: var(--tl-text-on-accent);
+    --_label: var(--tl-text);
+    --_description: var(--tl-text-muted);
+
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--tl-space-4);
+    font-size: var(--_fs);
+    line-height: var(--tl-leading-normal);
+    cursor: pointer;
+  }
+
+  .tl-checkbox[data-size='sm'] { --_size: 14px; --_fs: var(--tl-text-xs); }
+  .tl-checkbox[data-size='md'] { --_size: 16px; --_fs: var(--tl-text-sm); }
+  .tl-checkbox[data-size='lg'] { --_size: 20px; --_fs: var(--tl-text-md); }
+
+  .tl-checkbox__control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--_size);
+    /* One line of the label, so the box centres on the first line and stays
+     * there when the text wraps instead of drifting to the block centre. */
+    height: calc(var(--_fs) * var(--tl-leading-normal));
+  }
+
+  .tl-checkbox__input {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    margin: 0;
+    opacity: 0;
+    cursor: inherit;
+  }
+
+  /* With a label the whole row is the target. Without one, a 16px box is under
+   * the 24x24 of WCAG 2.2 SC 2.5.8, so the transparent input grows past the
+   * drawn box rather than the box getting bigger. */
+  .tl-checkbox:not([data-has-text]) .tl-checkbox__input {
+    inset: calc((var(--_target) - var(--_size)) / -2);
+  }
+
+  .tl-checkbox__box {
+    /* Grid rather than absolute positioning so both glyphs share one cell
+     * without either needing to be positioned. Paint order is not what makes
+     * the box clickable — the popped glyph is a stacking context and sits above
+     * the transparent input — the root `<label>` is: any click on the box or
+     * the glyph is forwarded to the input, so no z-index is needed on it. */
+    display: grid;
+    place-items: center;
+    width: var(--_size);
+    height: var(--_size);
+    color: var(--_glyph);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--_radius);
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-checkbox__glyph {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    /* The pop token resolves to `scale(1)` under reduced motion, so the mark
+     * still fades in but no longer grows — no second media query. Opacity runs
+     * ahead of the transform on purpose: the tick is fully visible while it is
+     * still settling, so it reads as present rather than as arriving. */
+    transform: scale(var(--tl-zoom-pop));
+    transition:
+      opacity var(--tl-duration-2xs) var(--tl-ease-out),
+      transform var(--tl-duration-xs) var(--tl-ease-signature);
+  }
+
+  /* -- States ------------------------------------------------------------- */
+  .tl-checkbox__input:checked ~ .tl-checkbox__box,
+  .tl-checkbox__input:indeterminate ~ .tl-checkbox__box {
+    --_bg: var(--_fill);
+    --_border: var(--_fill);
+  }
+
+  .tl-checkbox__input:checked ~ .tl-checkbox__box .tl-checkbox__glyph--check,
+  .tl-checkbox__input:indeterminate ~ .tl-checkbox__box .tl-checkbox__glyph--dash {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* Mixed outranks checked, matching what the native control renders when both
+   * are set: the dash is the honest answer, a tick would claim a whole
+   * selection that is only partial. */
+  .tl-checkbox__input:indeterminate ~ .tl-checkbox__box .tl-checkbox__glyph--check {
+    opacity: 0;
+  }
+
+  .tl-checkbox:hover .tl-checkbox__input:not(:disabled) ~ .tl-checkbox__box {
+    --_border: var(--_border-hover);
+  }
+
+  .tl-checkbox:hover .tl-checkbox__input:not(:disabled):checked ~ .tl-checkbox__box,
+  .tl-checkbox:hover .tl-checkbox__input:not(:disabled):indeterminate ~ .tl-checkbox__box {
+    --_bg: var(--_fill-hover);
+    --_border: var(--_fill-hover);
+  }
+
+  /* The input carries focus but is transparent, so its ring would be too. The
+   * base layer's ring is dropped here and redrawn on the visible box. */
+  .tl-checkbox__input:focus-visible {
+    outline: none;
+  }
+  .tl-checkbox__input:focus-visible ~ .tl-checkbox__box {
+    outline: var(--tl-focus-width) solid var(--tl-focus-ring);
+    outline-offset: var(--tl-focus-offset);
+  }
+
+  .tl-checkbox[data-invalid] {
+    --_border: var(--tl-danger-fg);
+    --_border-hover: var(--tl-danger-fg);
+  }
+
+  .tl-checkbox[data-disabled] {
+    --_bg: var(--tl-surface-disabled);
+    --_border: var(--tl-border);
+    --_border-hover: var(--tl-border);
+    --_fill: var(--tl-surface-disabled);
+    --_fill-hover: var(--tl-surface-disabled);
+    --_glyph: var(--tl-text-disabled);
+    --_label: var(--tl-text-disabled);
+    --_description: var(--tl-text-disabled);
+    cursor: not-allowed;
+  }
+
+  /* -- Text --------------------------------------------------------------- */
+  .tl-checkbox__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-1);
+    min-width: 0;
+  }
+
+  .tl-checkbox__label {
+    color: var(--_label);
+    font-weight: var(--tl-weight-medium);
+  }
+
+  .tl-checkbox__description {
+    /* Relative to the label rather than a fixed step, so the pair keeps the
+     * same visual relationship at every size. */
+    font-size: 0.9em;
+    line-height: var(--tl-leading-snug);
+    color: var(--_description);
+  }
+
+  /* The token layer remaps `--tl-accent` onto `Highlight` under forced colors,
+   * so a checked box does not lose its fill — it becomes the system highlight.
+   * That makes `HighlightText` the only right colour for the mark, which is the
+   * one paired with it; `CanvasText` is the page's text colour and lands on top
+   * of the highlight rather than against it. The glyph is only ever visible on
+   * a filled box, so there is no unchecked case to answer for. A disabled box
+   * keeps an ordinary fill, where `GrayText` still reads. */
+  @media (forced-colors: active) {
+    .tl-checkbox__box {
+      border-color: CanvasText;
+    }
+    /* See Input: the invalid state rides on border colour, which this mode
+     * replaces, so the dash is what survives to carry it. */
+    .tl-checkbox[data-invalid] .tl-checkbox__box {
+      border-style: dashed;
+    }
+    .tl-checkbox__input:disabled ~ .tl-checkbox__box {
+      border-color: GrayText;
+    }
+    .tl-checkbox__glyph {
+      color: HighlightText;
+    }
+    .tl-checkbox__input:disabled ~ .tl-checkbox__box .tl-checkbox__glyph {
+      color: GrayText;
+    }
+  }
+}

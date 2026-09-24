@@ -1,0 +1,273 @@
+@layer tl.components {
+  .tl-toast-viewport {
+    position: fixed;
+    z-index: var(--tl-z-toast);
+
+    display: flex;
+    /* Never `column-reverse`. DOM order is what a screen reader reads and what
+     * the live region announces; reversing it visually would put the newest
+     * toast first on screen and last in the announcement. Bottom placements
+     * already grow toward the viewport edge because the container is pinned
+     * there, so the reverse buys nothing and costs the correspondence. */
+    flex-direction: column;
+    gap: var(--tl-space-4);
+
+    width: min(100%, 25rem);
+    max-width: 100%;
+    padding: var(--tl-space-8);
+    /* The region is always in the DOM, empty most of the time. Without this it
+     * would sit over the page as an invisible 400px-wide click blocker. Each
+     * toast opts back in. */
+    pointer-events: none;
+  }
+
+  .tl-toast-viewport[data-placement^='top']    { inset-block-start: 0; }
+  .tl-toast-viewport[data-placement^='bottom'] { inset-block-end: 0; }
+
+  .tl-toast-viewport[data-placement$='start'] {
+    inset-inline-start: 0;
+    align-items: flex-start;
+  }
+
+  .tl-toast-viewport[data-placement$='end'] {
+    inset-inline-end: 0;
+    align-items: flex-end;
+  }
+
+  .tl-toast-viewport[data-placement$='center'] {
+    inset-inline: 0;
+    margin-inline: auto;
+    align-items: center;
+  }
+
+  .tl-toast {
+    --_accent: var(--tl-info-fg);
+    /* Entry vector, resolved per placement below. Both legs are already
+     * multiplied through --tl-motion-distance by the --tl-slide token, so
+     * reduced motion turns the slide into a plain fade without a second rule. */
+    --_enter-x: 0px;
+    --_enter-y: 0px;
+
+    pointer-events: auto;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-5);
+    width: 100%;
+
+    padding: var(--tl-space-6) var(--tl-space-7);
+    color: var(--tl-text);
+    background: var(--tl-overlay-bg);
+    border: 1px solid var(--tl-overlay-border);
+    /* Logical, so the stripe lands on the leading edge in an RTL locale rather
+     * than on the far side of the card. */
+    border-inline-start: 3px solid var(--_accent);
+    border-radius: var(--tl-radius-lg);
+    box-shadow: var(--tl-elevation-md);
+    font-size: var(--tl-text-sm);
+    line-height: var(--tl-leading-snug);
+    /* Clips the lifetime bar to the rounded corner. The dismiss and action
+     * buttons keep the standard outset focus ring: after their negative margins
+     * they still sit 10px inside the card edge, and the ring reaches 3px. */
+    overflow: hidden;
+
+    opacity: 1;
+    transform: translate(0, 0);
+    transition: var(--tl-transition-popover-enter);
+  }
+
+  /* Against the bare selector, not [data-state='entering']. A toast is pushed
+   * into a list that is already on screen, so `usePresence` settles it straight
+   * into `entered` and its very first computed style is the resting one; a
+   * starting style gated on the entering state would never match and the toast
+   * would simply appear. */
+  @starting-style {
+    .tl-toast {
+      opacity: 0;
+      transform: translate(var(--_enter-x), var(--_enter-y));
+    }
+  }
+
+  /* The exit retraces the entry vector on the paired recipe. The pointer is
+   * neutralised at once so a toast sliding away cannot swallow a click aimed
+   * at whatever it was covering. */
+  .tl-toast[data-state='exiting'] {
+    opacity: 0;
+    transform: translate(var(--_enter-x), var(--_enter-y));
+    transition: var(--tl-transition-popover-exit);
+    pointer-events: none;
+  }
+
+  /* -- Entry vector per placement ----------------------------------------------
+   * A toast arrives from the viewport edge it is pinned to, so the movement
+   * reads as coming from off-screen rather than rising out of the page. The
+   * placements are logical but `transform` is physical, which is why the RTL
+   * rules flip the horizontal leg by hand. */
+  .tl-toast-viewport[data-placement$='end'] .tl-toast {
+    --_enter-x: var(--tl-slide);
+  }
+  .tl-toast-viewport[data-placement$='start'] .tl-toast {
+    --_enter-x: calc(-1 * var(--tl-slide));
+  }
+  .tl-toast-viewport:dir(rtl)[data-placement$='end'] .tl-toast {
+    --_enter-x: calc(-1 * var(--tl-slide));
+  }
+  .tl-toast-viewport:dir(rtl)[data-placement$='start'] .tl-toast {
+    --_enter-x: var(--tl-slide);
+  }
+  .tl-toast-viewport[data-placement='top-center'] .tl-toast {
+    --_enter-y: calc(-1 * var(--tl-slide));
+  }
+  .tl-toast-viewport[data-placement='bottom-center'] .tl-toast {
+    --_enter-y: var(--tl-slide);
+  }
+
+  .tl-toast[data-variant='info']    { --_accent: var(--tl-info-fg); }
+  .tl-toast[data-variant='success'] { --_accent: var(--tl-success-fg); }
+  .tl-toast[data-variant='warning'] { --_accent: var(--tl-warning-fg); }
+  .tl-toast[data-variant='danger']  { --_accent: var(--tl-danger-fg); }
+
+  .tl-toast__icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--_accent);
+    font-size: 1.2em;
+    margin-block-start: 1px;
+  }
+
+  .tl-toast__body {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .tl-toast__title {
+    margin: 0;
+    font-weight: var(--tl-weight-semibold);
+    color: var(--tl-text);
+  }
+
+  .tl-toast__title + .tl-toast__description {
+    margin-block-start: var(--tl-space-1);
+  }
+
+  .tl-toast__description {
+    color: var(--tl-text-secondary);
+    /* A toast is not a document. Long copy belongs in a banner or a dialog, and
+     * clamping is the honest way to say so rather than letting one notification
+     * grow tall enough to cover the control that produced it. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+  }
+
+  .tl-toast__action {
+    flex: none;
+    align-self: center;
+    padding: var(--tl-space-2) var(--tl-space-5);
+
+    font: inherit;
+    font-weight: var(--tl-weight-semibold);
+    color: var(--tl-text-accent);
+    background: transparent;
+    border: 1px solid var(--tl-border);
+    border-radius: var(--tl-radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-toast__action:hover {
+    background: var(--tl-surface-hover);
+    border-color: var(--tl-border-strong);
+  }
+
+  .tl-toast__dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+
+    /* 24x24 for WCAG 2.2 SC 2.5.8, pulled back out of the layout so the card's
+     * padding still reads as specified. */
+    width: 24px;
+    height: 24px;
+    margin-block: -2px;
+    margin-inline-end: calc(var(--tl-space-2) * -1);
+
+    font-size: 1.05em;
+    color: var(--tl-text-muted);
+    background: transparent;
+    border: 0;
+    border-radius: var(--tl-radius-sm);
+    cursor: pointer;
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-toast__dismiss:hover {
+    color: var(--tl-text);
+    background: var(--tl-surface-hover);
+  }
+
+  /* -- Lifetime bar --------------------------------------------------------------
+   * The only visible answer to "how long do I have?", and what makes the pause
+   * on hover legible as a pause rather than as a toast that forgot to leave.
+   * It is information, so it survives reduced motion: `--_life` is the real
+   * lifetime written inline from `duration`, not a motion duration, and must
+   * not be scaled — a bar that ran out at half time would lie. */
+  .tl-toast__life {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    height: 2px;
+    background: var(--_accent);
+    opacity: 0.55;
+    /* The fill stays anchored to the leading edge and recedes from the
+     * trailing one, so the origin sits at the start of the card and has to be
+     * moved to the far side in RTL, where the leading edge is on the right. */
+    transform-origin: 0 50%;
+    animation: tl-toast-life var(--_life) linear forwards;
+  }
+
+  .tl-toast-viewport:dir(rtl) .tl-toast__life {
+    transform-origin: 100% 50%;
+  }
+
+  .tl-toast[data-paused] .tl-toast__life {
+    animation-play-state: paused;
+  }
+
+  /* Cancelled outright on the way out, never merely paused. `usePresence`
+   * waits on every animation in the subtree, running or paused, before it lets
+   * the node go — so a countdown with seconds left would keep a dismissed toast
+   * on screen for the rest of its lifetime. */
+  .tl-toast[data-state='exiting'] .tl-toast__life {
+    animation: none;
+    opacity: 0;
+  }
+
+  @keyframes tl-toast-life {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
+  }
+
+  /* The accent stripe is a border, so it survives forced colors — but it is
+   * recoloured to the system text colour along with everything else, which is
+   * why the variant glyph is what actually carries the status there. The bar
+   * is a background fill and would vanish, so it is repainted in Highlight. */
+  @media (forced-colors: active) {
+    .tl-toast {
+      border-color: CanvasText;
+    }
+
+    .tl-toast__icon {
+      color: CanvasText;
+    }
+
+    .tl-toast__life {
+      background: Highlight;
+      opacity: 1;
+    }
+  }
+}

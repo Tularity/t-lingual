@@ -1,0 +1,94 @@
+@layer tl.components {
+  .tl-scroll-area {
+    --_max-h: none;
+    --_fade: var(--tl-space-9);
+    --_shadow-color: color-mix(in oklab, var(--tl-text) 14%, transparent);
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    max-block-size: var(--_max-h);
+    /* Without this the scroll area, as a flex item, refuses to shrink below its
+     * content's height and simply never scrolls — the single most common reason
+     * a `max-height` on a scroller appears to be ignored. */
+    min-block-size: 0;
+    min-inline-size: 0;
+  }
+
+  .tl-scroll-area__viewport {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    /* Stops a flick at the end of a transcript from scrolling the page, or the
+     * dialog, behind it. */
+    overscroll-behavior: contain;
+    /* Reserve the gutter so the content does not shift sideways at the moment
+     * it grows past the fold and the scrollbar appears. */
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--tl-border-strong) transparent;
+  }
+
+  .tl-scroll-area__content {
+    min-inline-size: 0;
+  }
+
+  /* -- Edge affordances -----------------------------------------------------
+   * Painted on the root rather than inside the viewport: anything inside a
+   * scroller scrolls with it, so a shadow placed there slides away the moment
+   * it becomes relevant. `pointer-events: none` keeps them from eating a click
+   * on the first and last rows, and the opacity transition is what stops the
+   * shadow blinking at the top of a long scroll. */
+  .tl-scroll-area[data-shadows]::before,
+  .tl-scroll-area[data-shadows]::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    block-size: var(--_fade);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--tl-duration-sm) var(--tl-ease-out);
+    z-index: var(--tl-z-raised);
+  }
+
+  .tl-scroll-area[data-shadows]::before {
+    inset-block-start: 0;
+    background: linear-gradient(to bottom, var(--_shadow-color), transparent);
+  }
+
+  .tl-scroll-area[data-shadows]::after {
+    inset-block-end: 0;
+    background: linear-gradient(to top, var(--_shadow-color), transparent);
+  }
+
+  .tl-scroll-area[data-shadows][data-scrolled-top]::before,
+  .tl-scroll-area[data-shadows][data-scrolled-bottom]::after {
+    opacity: 1;
+  }
+
+  /* A gradient is dropped entirely in high contrast mode, so the "there is more
+   * content" cue vanishes with it. A hard rule on the overflowing edge is the
+   * only thing that survives, and it says the same thing.
+   *
+   * It is drawn on the same pseudo-elements rather than as a border on the
+   * viewport. Two reasons: the opacity gating above already switches these on
+   * and off with the edge attributes, so a scroller that opted out of shadows
+   * does not silently grow edges here; and a border on the viewport shrinks its
+   * content box by a pixel each time an edge appears, which makes the content
+   * twitch on every scroll to an end. */
+  @media (forced-colors: active) {
+    .tl-scroll-area[data-shadows]::before,
+    .tl-scroll-area[data-shadows]::after {
+      background: none;
+      block-size: 0;
+    }
+    .tl-scroll-area[data-shadows]::before {
+      border-block-start: 1px solid CanvasText;
+    }
+    .tl-scroll-area[data-shadows]::after {
+      border-block-end: 1px solid CanvasText;
+    }
+  }
+}

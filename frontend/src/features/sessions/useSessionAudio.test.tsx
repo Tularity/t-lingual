@@ -1,0 +1,228 @@
+import { act, renderHook, waitFor } from '@testing-library/react'
+import type { AudioPart, SessionAudio } from '../../api/contracts'
+import { locateAudio, playableParts, useSessionAudio } from './useSessionAudio'
+
+const mocks = vi.hoisted(() => ({ list: vi.fn(), partUrl: vi.fn((_session: string, part: string) => `/api/audio/${part}`) }))
+vi.mock('../../api/client', () => ({ api: { audio: { list: mocks.list, partUrl: mocks.partUrl } } }))
+function part(id: string, startMs: number, durationMs: number, state: AudioPart['state'] = 'ready'): AudioPart {
+  return { id, sessionId: 'session', startMs, durationMs, sampleRate: 16000, channels: 1,
+    bytes: durationMs * 32, state, createdAt: '2026-09-01T00:00:00Z' }
+}
+const first = part('first', 5000, 3000)
+const second = part('second', 12000, 4000)
+const catalog: SessionAudio = { parts: [second, part('unfinished', 8000, 3000, 'recording'), first], durationMs: 16000 }
+function attachAudio(current: ReturnType<typeof useSessionAudio>) {
+  const audio = document.createElement('audio')
+  Object.defineProperty(audio, 'duration', { configurable: true, value: 4 })
+  Object.defineProperty(audio, 'currentTime', { configurable: true, writable: true, value: 0 })
+  const load = vi.spyOn(audio, 'load').mockImplementation(() => undefined)
+  const pause = vi.spyOn(audio, 'pause').mockImplementation(() => undefined)
+  const play = vi.spyOn(audio, 'play').mockImplementation(async () => undefined)
+  current.bindAudio(audio)
+  return { audio, load, pause, play }
+}
+
+describe('session audio timeline', () => {
+  beforeEach(() => { mocks.list.mockReset().mockResolvedValue(catalog); mocks.partUrl.mockReset().mockImplementation((_session: string, part: string) => `/api/audio/${part}`) })
+
+  it('sorts playable parts and clamps seeks through a nonzero origin and silence gaps', () => {
+    expect(playableParts(catalog.parts).map(item => item.id)).toEqual(['first', 'second'])
+    expect(locateAudio(catalog.parts, 0)).toMatchObject({ part: first, position: 5000 })
+    expect(locateAudio(catalog.parts, 9000)).toMatchObject({ part: second, position: 12000 })
+    expect(locateAudio(catalog.parts, 20000)).toMatchObject({ part: second, position: 16000 })
+    expect(locateAudio([], 12000)).toBeNull()
+  })
+
+  it('seeks across parts without playing the gap, and applies rate and volume before playback', async () => {
+    const { result } = renderHook(() => useSessionAudio('session'))
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { audio, load, play } = attachAudio(result.current)
+    act(() => { result.current.setRate(1.5); result.current.setVolume(.4); result.current.seek(9000, true) })
+    await waitFor(() => expect(result.current.source).toBe('/api/audio/second'))
+    expect(result.current.positionMs).toBe(12000)
+    expect(result.current.loading).toBe(true)
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(play).not.toHaveBeenCalled()
+    act(() => result.current.onLoadedMetadata())
+    expect(audio.currentTime).toBe(0)
+    expect(audio.playbackRate).toBe(1.5)
+    expect(audio.volume).toBe(.4)
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
+    audio.currentTime = 1.25
+    act(() => result.current.onTimeUpdate())
+    expect(result.current.positionMs).toBe(13250)
+  })
+
+  it('cancels queued autoplay if the listener pauses before metadata', async () => {
+    const { result } = renderHook(() => useSessionAudio('session'))
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { play, pause } = attachAudio(result.current)
+    act(() => result.current.seek(5000, true))
+    await waitFor(() => expect(result.current.selected?.id).toBe('first'))
+    act(() => result.current.pause())
+    act(() => result.current.onLoadedMetadata())
+    expect(play).not.toHaveBeenCalled()
+    expect(pause).toHaveBeenCalled()
+  })
+
+  it('advances to the next part after an uninterrupted recording ends', async () => {
+    const { result } = renderHook(() => useSessionAudio('session'))
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { play } = attachAudio(result.current)
+    act(() => result.current.seek(5000, true))
+    await waitFor(() => expect(result.current.selected?.id).toBe('first'))
+    act(() => result.current.onLoadedMetadata())
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
+    act(() => result.current.onEnded())
+    await waitFor(() => expect(result.current.selected?.id).toBe('second'))
+    expect(result.current.positionMs).toBe(12000)
+    act(() => result.current.onLoadedMetadata())
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2))
+  })
+
+  it('never pairs a new session ID with an old session part while its catalog loads', async () => {
+    let resolveNext!: (value: SessionAudio) => void
+    mocks.list.mockImplementation((id: string) => id === 'session' ? Promise.resolve(catalog) : new Promise<SessionAudio>(resolve => { resolveNext = resolve }))
+    mocks.partUrl.mockImplementation((id: string, partId: string) => `/api/audio/${id}/${partId}`)
+    const { result, rerender } = renderHook(({ id }) => useSessionAudio(id), { initialProps: { id: 'session' } })
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    attachAudio(result.current)
+    act(() => result.current.seek(5000, false))
+    await waitFor(() => expect(result.current.source).toBe('/api/audio/session/first'))
+    mocks.partUrl.mockClear()
+    rerender({ id: 'other' })
+    expect(result.current.source).toBeUndefined()
+    expect(result.current.ready).toHaveLength(0)
+    expect(result.current.positionMs).toBe(0)
+    expect(mocks.partUrl).not.toHaveBeenCalledWith('other', 'first')
+    await act(async () => resolveNext({ parts: [part('new-part', 0, 2000)], durationMs: 2000 }))
+    expect(result.current.source).toBeUndefined()
+    expect(result.current.ready).toHaveLength(1)
+  })
+
+  it('ignores an ended event that arrives after the listener explicitly pauses', async () => {
+    const { result } = renderHook(() => useSessionAudio('session'))
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { play } = attachAudio(result.current)
+    act(() => result.current.seek(5000, true))
+    await waitFor(() => expect(result.current.selected?.id).toBe('first'))
+    act(() => { result.current.onLoadedMetadata(); result.current.onPlay() })
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
+    act(() => result.current.pause())
+    act(() => result.current.onEnded())
+    expect(result.current.selected?.id).toBe('first')
+    expect(result.current.playing).toBe(false)
+    expect(play).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps empty audio inert and does not invent a media source', async () => {
+    mocks.list.mockResolvedValue({ parts: [], durationMs: 0 })
+    const { result } = renderHook(() => useSessionAudio('empty'))
+    await waitFor(() => expect(result.current.catalogLoading).toBe(false))
+    const { play } = attachAudio(result.current)
+    act(() => { result.current.play(); result.current.seek(5000) })
+    expect(result.current.ready).toHaveLength(0)
+    expect(result.current.source).toBeUndefined()
+    expect(result.current.positionMs).toBe(0)
+    expect(play).not.toHaveBeenCalled()
+  })
+
+it('retries the failed media element even when the catalog returns the same source URL', async () => {
+    const { result } = renderHook(() => useSessionAudio('session'))
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { load } = attachAudio(result.current)
+    act(() => result.current.seek(5000, false))
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+    const originalSource = result.current.source
+    act(() => result.current.onError())
+    expect(result.current.error).toMatch(/recording could not be loaded/i)
+    act(() => result.current.retry())
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(result.current.source).toBe(originalSource)
+    expect(result.current.loading).toBe(true)
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2))
+    act(() => result.current.onLoadedMetadata())
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toBe('')
+  })
+
+  it('clears stale loading and errors on session changes and ignores an old play rejection', async () => {
+    let resolveThird!: (value: SessionAudio) => void
+    mocks.list.mockImplementation((id: string) => id === 'session' ? Promise.resolve(catalog)
+      : id === 'other' ? Promise.reject(new Error('Other catalog unavailable'))
+        : new Promise<SessionAudio>(resolve => { resolveThird = resolve }))
+    const { result, rerender } = renderHook(({ id }) => useSessionAudio(id), { initialProps: { id: 'session' } })
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { audio } = attachAudio(result.current)
+    let rejectOld!: (reason: Error) => void
+    vi.spyOn(audio, 'play').mockImplementation(() => new Promise<void>((_, reject) => { rejectOld = reject }))
+    act(() => result.current.seek(5000, true))
+    await waitFor(() => expect(result.current.loading).toBe(true))
+    act(() => result.current.onLoadedMetadata())
+    await waitFor(() => expect(rejectOld).toBeTypeOf('function'))
+    rerender({ id: 'other' })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toBe('')
+    await waitFor(() => expect(result.current.error).toMatch(/Other catalog unavailable/))
+    expect(result.current.catalogLoading).toBe(false)
+    rerender({ id: 'third' })
+    expect(result.current.error).toBe('')
+    expect(result.current.catalogLoading).toBe(true)
+    await act(async () => rejectOld(new Error('Old session autoplay failed')))
+    expect(result.current.error).toBe('')
+    await act(async () => resolveThird({ parts: [part('third-part', 0, 1000)], durationMs: 1000 }))
+    expect(result.current.error).toBe('')
+    expect(result.current.loading).toBe(false)
+    expect(result.current.ready).toHaveLength(1)
+  })
+
+  it('does not erase a repeated media failure when the catalog retry finishes later', async () => {
+    let resolveRetry!: (value: SessionAudio) => void
+    mocks.list.mockResolvedValueOnce(catalog).mockImplementationOnce(() => new Promise<SessionAudio>(resolve => { resolveRetry = resolve }))
+    const { result } = renderHook(() => useSessionAudio('session'))
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    attachAudio(result.current)
+    act(() => result.current.seek(5000, false))
+    await waitFor(() => expect(result.current.source).toBe('/api/audio/first'))
+    act(() => { result.current.onError(); result.current.retry() })
+    await waitFor(() => expect(resolveRetry).toBeTypeOf('function'))
+    act(() => result.current.onError())
+    await act(async () => resolveRetry(catalog))
+    expect(result.current.catalogLoading).toBe(false)
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toMatch(/recording could not be loaded/i)
+  })
+
+  it('invalidates an old play promise even if the listener returns to its original session', async () => {
+    mocks.list.mockImplementation((id: string) => id === 'session' ? Promise.resolve(catalog) : new Promise<SessionAudio>(() => undefined))
+    const { result, rerender } = renderHook(({ id }) => useSessionAudio(id), { initialProps: { id: 'session' } })
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { audio } = attachAudio(result.current)
+    let rejectOld!: (reason: Error) => void
+    vi.spyOn(audio, 'play').mockImplementation(() => new Promise<void>((_, reject) => { rejectOld = reject }))
+    act(() => result.current.seek(5000, true))
+    act(() => result.current.onLoadedMetadata())
+    await waitFor(() => expect(rejectOld).toBeTypeOf('function'))
+    rerender({ id: 'other' })
+    rerender({ id: 'session' })
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    await act(async () => rejectOld(new Error('Old attempt failed')))
+    expect(result.current.error).toBe('')
+  })
+  it('clears a selected recording when a refreshed catalog no longer offers that part', async () => {
+    const { result, rerender } = renderHook(({ refresh }) => useSessionAudio('session', refresh), { initialProps: { refresh: 'one' } })
+    await waitFor(() => expect(result.current.ready).toHaveLength(2))
+    const { pause } = attachAudio(result.current)
+    act(() => result.current.seek(5000, true))
+    await waitFor(() => expect(result.current.loading).toBe(true))
+    act(() => result.current.onError())
+    mocks.list.mockResolvedValue({ parts: [], durationMs: 0 })
+    rerender({ refresh: 'two' })
+    await waitFor(() => expect(result.current.ready).toHaveLength(0))
+    expect(result.current.source).toBeUndefined()
+    expect(result.current.loading).toBe(false)
+    expect(result.current.playing).toBe(false)
+    expect(result.current.error).toBe('')
+    expect(pause).toHaveBeenCalled()
+  })
+})

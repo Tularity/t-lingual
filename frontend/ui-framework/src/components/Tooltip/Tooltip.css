@@ -1,0 +1,120 @@
+@layer tl.components {
+  /* The positioner. `translate` is the resting position written by
+   * `useAnchoredPosition`; `transform` carries the entrance and exit, and the
+   * two compose, so a reposition mid-scroll never fights the transition. The
+   * paired popover recipes list `transform`, not the individual `scale`
+   * property, which is why the zoom is written as a transform. */
+  .tl-tooltip {
+    --_arrow: 8px;
+    --_corner: 10px;
+
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--tl-z-tooltip);
+    width: max-content;
+    translate: var(--_x, 0) var(--_y, 0);
+
+    opacity: 1;
+    transform: scale(1);
+    transition: var(--tl-transition-popover-enter);
+  }
+
+  /* A zoom and nothing else. A tooltip is a label, not a panel arriving from
+   * somewhere, and the lift that ties a popover to its trigger would make a
+   * description read as a thing to interact with. */
+  @starting-style {
+    .tl-tooltip[data-state='entering'] {
+      opacity: 0;
+      transform: scale(var(--tl-zoom-subtle));
+    }
+  }
+
+  /* On its way out it must not sit in front of the page catching clicks — but
+   * open it MUST accept the pointer, because WCAG 2.1 SC 1.4.13 requires the
+   * tip to stay put while the pointer moves onto it. `pointer-events: none` on
+   * a tooltip is the single most common way that criterion is failed. */
+  .tl-tooltip[data-state='exiting'] {
+    opacity: 0;
+    transform: scale(var(--tl-zoom-subtle));
+    transition: var(--tl-transition-popover-exit);
+    pointer-events: none;
+  }
+
+  /* Zero duration, not `transition: none`, and after both state rules on
+   * purpose. A tip that opened because its neighbour only just closed is one
+   * stop on a walk along a toolbar, and replaying a 250ms entrance at each stop
+   * turns the walk into a strobe; the same goes for the exit, which is why the
+   * rule has to beat the exiting state too. Keeping the declaration and only
+   * zeroing its duration means the properties are still enumerated by
+   * usePresence's exit wait, so an instant tip unmounts on the next frame
+   * exactly as an animated one would. */
+  .tl-tooltip[data-instant] {
+    transition-duration: var(--tl-duration-0);
+  }
+
+  /* The scale grows out of the edge nearest the trigger. */
+  .tl-tooltip[data-side='bottom'] { transform-origin: var(--_arrow-x, 50%) 0; }
+  .tl-tooltip[data-side='top'] { transform-origin: var(--_arrow-x, 50%) 100%; }
+  .tl-tooltip[data-side='right'] { transform-origin: 0 var(--_arrow-y, 50%); }
+  .tl-tooltip[data-side='left'] { transform-origin: 100% var(--_arrow-y, 50%); }
+
+  .tl-tooltip__tip {
+    /* Roughly 40 characters. Wider than this and the eye loses the line it was
+     * on between the end of one line and the start of the next, which is a poor
+     * trade for a transient description. */
+    max-width: 34ch;
+    padding: var(--tl-space-3) var(--tl-space-5);
+    font-size: var(--tl-text-xs);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-snug);
+    text-align: start;
+    color: var(--tl-text-inverse);
+    background: var(--tl-surface-inverse);
+    border-radius: var(--tl-radius-sm);
+    box-shadow: var(--tl-elevation-sm);
+  }
+
+  .tl-tooltip__arrow {
+    position: absolute;
+    width: var(--_arrow);
+    height: var(--_arrow);
+    background: var(--tl-surface-inverse);
+    rotate: 45deg;
+  }
+
+  .tl-tooltip[data-side='bottom'] .tl-tooltip__arrow {
+    top: 0;
+    left: clamp(var(--_corner), var(--_arrow-x, 50%), calc(100% - var(--_corner)));
+    translate: -50% -50%;
+  }
+
+  .tl-tooltip[data-side='top'] .tl-tooltip__arrow {
+    bottom: 0;
+    left: clamp(var(--_corner), var(--_arrow-x, 50%), calc(100% - var(--_corner)));
+    translate: -50% 50%;
+  }
+
+  .tl-tooltip[data-side='right'] .tl-tooltip__arrow {
+    left: 0;
+    top: clamp(var(--_corner), var(--_arrow-y, 50%), calc(100% - var(--_corner)));
+    translate: -50% -50%;
+  }
+
+  .tl-tooltip[data-side='left'] .tl-tooltip__arrow {
+    right: 0;
+    top: clamp(var(--_corner), var(--_arrow-y, 50%), calc(100% - var(--_corner)));
+    translate: 50% -50%;
+  }
+
+  /* The inverse surface is the only thing separating the tip from the page, and
+   * forced colors collapses it into Canvas. A border is the replacement. */
+  @media (forced-colors: active) {
+    .tl-tooltip__tip {
+      border: 1px solid CanvasText;
+    }
+    .tl-tooltip__arrow {
+      display: none;
+    }
+  }
+}

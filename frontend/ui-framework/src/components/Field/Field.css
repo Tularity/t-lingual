@@ -1,0 +1,98 @@
+@layer tl.components {
+  .tl-field {
+    --_label-fg: var(--tl-text);
+    --_hint-fg: var(--tl-text-secondary);
+    --_error-fg: var(--tl-danger-fg);
+    --_meta-fg: var(--tl-text-subtle);
+
+    /* Flex rather than plain block flow for one reason: it stops the children's
+     * top margins from collapsing out through the field's own box. The spacing
+     * is still margins, not `gap`, because the error node is always rendered
+     * and a gap would reserve space around it while it is empty. */
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .tl-field__label {
+    /* Block, not flex. The required marker has to sit on the last line of a
+     * label that wraps, which is what inline flow gives for free and what any
+     * flex layout of the same two nodes takes away. */
+    display: block;
+    font-size: var(--tl-text-sm);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-snug);
+    color: var(--_label-fg);
+    /* The label is a click target for the control; keeping the cursor as an
+     * arrow rather than a text caret says so. */
+    cursor: default;
+  }
+
+  .tl-field[data-disabled] {
+    --_label-fg: var(--tl-text-disabled);
+    --_hint-fg: var(--tl-text-disabled);
+    --_meta-fg: var(--tl-text-disabled);
+  }
+
+  .tl-field__marker {
+    margin-inline-start: var(--tl-space-1);
+    color: var(--_error-fg);
+  }
+
+  .tl-field__optional {
+    margin-inline-start: var(--tl-space-2);
+    font-weight: var(--tl-weight-regular);
+    font-size: var(--tl-text-xs);
+    color: var(--_meta-fg);
+  }
+
+  .tl-field__hint {
+    margin: var(--tl-space-2) 0 0;
+    font-size: var(--tl-text-xs);
+    line-height: var(--tl-leading-snug);
+    color: var(--_hint-fg);
+  }
+
+  .tl-field__control {
+    margin-block-start: var(--tl-space-3);
+    min-inline-size: 0;
+  }
+
+  /* Both of these top margins exist to separate the node from the label above
+   * it. With no label there is nothing to separate from, and the field would
+   * otherwise open with dead space. */
+  .tl-field__hint:first-child,
+  .tl-field__control:first-child {
+    margin-block-start: 0;
+  }
+
+  .tl-field__footer {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--tl-space-6);
+  }
+
+  .tl-field__error {
+    margin: 0;
+    font-size: var(--tl-text-xs);
+    line-height: var(--tl-leading-snug);
+    color: var(--_error-fg);
+  }
+
+  /* The margin lives on the populated state so the empty live region collapses
+   * to nothing. Do not fold this into the base rule. */
+  .tl-field__error:not(:empty) {
+    margin-block-start: var(--tl-space-2);
+  }
+
+  .tl-field__counter {
+    margin-block-start: var(--tl-space-2);
+    font-size: var(--tl-text-xs);
+    line-height: var(--tl-leading-snug);
+    color: var(--_meta-fg);
+    /* Proportional digits make the count jitter as it ticks down. */
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+}

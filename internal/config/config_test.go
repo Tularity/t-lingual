@@ -29,18 +29,18 @@ func TestProductionRequiresHTTPS(t *testing.T) {
 	}
 }
 
-func TestProductionRequiresBothRemoteProviders(t *testing.T) {
+func TestProductionCanStartBeforeProviderEndpointsAreConfigured(t *testing.T) {
 	base := map[string]string{
 		"TLINGUAL_ENV":                 "production",
 		"TLINGUAL_PUBLIC_URL":          "https://lingual.example.com",
 		"TLINGUAL_TRUSTED_PROXY_CIDRS": "172.20.0.1/32",
 	}
-	if _, err := FromLookup(lookup(base)); err == nil {
-		t.Fatal("expected production without providers to fail")
+	if cfg, err := FromLookup(lookup(base)); err != nil || cfg.ASR.Enabled() || cfg.Translator.Enabled() {
+		t.Fatalf("empty production provider config = %#v, %v", cfg, err)
 	}
 	base["TLINGUAL_ASR_BASE_URL"] = "https://asr.example.com"
-	if _, err := FromLookup(lookup(base)); err == nil {
-		t.Fatal("expected production without translator to fail")
+	if cfg, err := FromLookup(lookup(base)); err != nil || !cfg.ASR.Enabled() || cfg.Translator.Enabled() {
+		t.Fatalf("ASR-only production provider config = %#v, %v", cfg, err)
 	}
 	base["TLINGUAL_TRANSLATOR_BASE_URL"] = "https://translator.example.com"
 	if _, err := FromLookup(lookup(base)); err != nil {

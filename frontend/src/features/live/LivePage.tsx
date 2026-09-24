@@ -1,71 +1,67 @@
+import { useI18n } from '../../app/i18n'
 import { useEffect, useRef, useState } from 'react'
+import { SegmentedControl } from '@t-lingual/ui'
 import { Badge, Button, Card, EmptyState, Icon, Skeleton, buttonClassName } from '../../design-system'
+import { api } from '../../api/client'
 import { Link } from '../../app/router'
-import { formatDuration, languageName } from '../../app/utils'
+import { formatDuration } from '../../app/utils'
 import { useLiveInterpretation, type LiveState } from './useLiveInterpretation'
+import { SharingDialog } from '../sessions/SharingDialog'
+import { RecognitionLanguageMenu } from '../sessions/RecognitionLanguageMenu'
+import { SessionTransport } from '../sessions/SessionTransport'
+import { useSessionAudio } from '../sessions/useSessionAudio'
+import { LanguageSelect } from '../languages'
+import { TranscriptPiPButton } from '../transcript/useTranscriptPiP'
+import { TranscriptViewport } from '../transcript/TranscriptViewport'
 import './live.css'
 
-const statePresentation: Record<LiveState, { label: string; tone: 'neutral' | 'accent' | 'success' | 'danger' | 'info' }> = {
-  idle: { label: 'Ready', tone: 'neutral' }, requesting: { label: 'Requesting microphone', tone: 'info' }, connecting: { label: 'Connecting', tone: 'info' }, live: { label: 'Live', tone: 'danger' }, reconnecting: { label: 'Reconnecting', tone: 'accent' }, stopping: { label: 'Finishing', tone: 'info' }, ended: { label: 'Ended', tone: 'success' }, error: { label: 'Interrupted', tone: 'danger' },
-}
+const stateLabel: Record<LiveState, string> = { idle: 'Ready', requesting: 'Microphone permission', connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting', stopping: 'Finishing', ended: 'Saved', error: 'Interrupted' }
+export function LivePage({ sessionId, guest = false }: { sessionId: string; guest?: boolean }) {
+  const {t}=useI18n()
 
-function LevelMeter({ active }: { active: boolean }) {
-  return <span className="level-meter" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <span key={index} data-active={active || undefined} />)}</span>
-}
-
-export function LivePage({ sessionId }: { sessionId: string }) {
-  const live = useLiveInterpretation(sessionId)
+  const live = useLiveInterpretation(sessionId, guest)
   const { autoStart, session, start, state } = live
+  const player=useSessionAudio(sessionId,state)
+  const [transportMode,setTransportMode]=useState<'record'|'playback'>('record')
   const didAutoStart = useRef(false)
-  const feedRef = useRef<HTMLDivElement>(null)
-  const followLatestRef = useRef(true)
-  const [followingLatest, setFollowingLatest] = useState(true)
-  useEffect(() => { if (autoStart && session && state === 'idle' && !didAutoStart.current) { didAutoStart.current = true; void start() } }, [autoStart, session, start, state])
-  const latestSegment = live.segments.at(-1)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [immersive, setImmersive] = useState(false)
+  const [displayChoice, setDisplay] = useState<'parallel' | 'source' | 'translation' | null>(null)
+  const display = displayChoice ?? (live.translationConfigured === false ? 'source' : 'parallel')
+  const [largeText, setLargeText] = useState(false)
+  const demo = api.mode === 'mock'
+  useEffect(() => { if (autoStart && session && (live.access?.permission === 'record' || demo) && !live.recording.active && state === 'idle' && !didAutoStart.current) { didAutoStart.current = true; void start() } }, [autoStart, demo, live.access?.permission, live.recording.active, session, start, state])
   useEffect(() => {
-    const feed = feedRef.current
-    if (feed && followLatestRef.current) feed.scrollTop = feed.scrollHeight
-  }, [latestSegment?.translation, latestSegment?.translationStatus, live.partial, live.segments.length])
-  const updateFollowState = () => {
-    const feed = feedRef.current
-    if (!feed) return
-    const follows = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 72
-    followLatestRef.current = follows
-    setFollowingLatest(follows)
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setImmersive(false) }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [])
+  if (!session) {
+    if (state === 'error') return <Card className="live-load-error"><EmptyState icon="warning" title={t("Live session unavailable")} description={live.error || 'The live session could not be loaded.'} action={<Button variant="primary" onClick={live.retryLoad}>{t("Try loading again")}</Button>} /></Card>
+    return <div className="live-loading" role="status" aria-label={t("Loading live interpretation")}><Skeleton width="40%" height={31} /><Skeleton height={560} /></div>
   }
-  const jumpToLatest = () => {
-    const feed = feedRef.current
-    if (!feed) return
-    followLatestRef.current = true; setFollowingLatest(true); feed.scrollTop = feed.scrollHeight; feed.focus()
-  }
-  const presentation = statePresentation[live.state]
-  if (!live.session) {
-    if (live.state === 'error') return <Card className="live-load-error"><EmptyState icon="warning" title="Live session unavailable" description={live.error || 'The live session could not be loaded.'} action={<Button variant="primary" onClick={live.retryLoad}>Try loading again</Button>} /></Card>
-    return <div className="live-loading" role="status" aria-label="Loading live interpretation"><Skeleton width="40%" height={31} /><Skeleton width="100%" height={560} /></div>
-  }
-  const terminalSession = live.session.status === 'completed' || live.session.status === 'failed'
-  return <div className="live-page" data-compact={live.compact || undefined}>
-    <header className="live-header"><div className="live-header__identity"><Link className="back-link" href="/sessions"><Icon name="arrowLeft" size={18} />Sessions</Link><div><h1 dir="auto">{live.session?.title ?? 'Live interpretation'}</h1><p>{live.session && `${languageName(live.session.sourceLanguage)} → ${languageName(live.session.targetLanguage)}`}</p></div></div><div className="live-header__status"><Badge tone={presentation.tone} dot={live.state === 'live' || live.state === 'reconnecting'}>{presentation.label}</Badge>{live.elapsedMs > 0 && <time dateTime={`PT${Math.floor(live.elapsedMs / 1000)}S`}>{formatDuration(live.elapsedMs)}</time>}<span className="sr-only" role="status">Interpretation status: {presentation.label}</span></div></header>
-    {(live.state === 'reconnecting' || live.error) && <div className={`live-notice live-notice--${live.state === 'error' ? 'error' : 'warning'}`} role={live.state === 'error' ? 'alert' : 'status'}><Icon name="warning" size={19} /><div><strong>{live.state === 'reconnecting' ? 'Connection interrupted — restoring automatically' : live.state === 'error' ? 'Live interpretation paused' : 'Provider notice'}</strong><p dir="auto">{live.error || 'Audio resumes after the connection is restored. Already received text is safe.'}</p></div></div>}
-    <div className="live-layout">
-      <Card className="transcript-stage" aria-label="Live transcript">
-        <div className="transcript-stage__header"><div><span className="transcript-label">Original</span><strong>{live.session && languageName(live.session.sourceLanguage)}</strong></div><div><span className="transcript-label">Translation</span><strong>{live.session && languageName(live.session.targetLanguage)}</strong></div></div>
-        <div ref={feedRef} className="transcript-feed" tabIndex={0} role="log" aria-label="Live transcript entries" aria-live="polite" aria-relevant="additions" onScroll={updateFollowState}>
-          {live.segments.length === 0 && !live.partial ? <EmptyState icon="microphone" title={live.state === 'idle' ? 'Ready when you are' : live.state === 'requesting' ? 'Waiting for microphone permission' : 'Listening for speech…'} description={live.state === 'idle' ? 'Your microphone stays off until you press Start interpretation.' : 'Final transcript lines and translations will appear here in real time.'} /> : live.segments.map((segment) => <article className="transcript-row" key={segment.id}><div className="transcript-original"><span className="transcript-sequence">{String(segment.sequence).padStart(2, '0')}</span><p dir="auto">{segment.sourceText}</p></div><div className="transcript-translations"><div className={`translation translation--${segment.translationStatus}`}>{segment.translationStatus === 'pending' ? <><span className="translation-dots" aria-hidden="true"><i /><i /><i /></span><span>Translating…</span></> : segment.translationStatus === 'failed' ? <><Icon name="warning" size={16} /><span dir="auto">{segment.translationError || 'Translation unavailable'}</span></> : segment.translationStatus === 'succeeded' ? <><span className="translation-language">{live.session && languageName(live.session.targetLanguage)}</span><p dir="auto">{segment.translation}</p></> : <span className="translation-empty">Translation not requested</span>}</div></div></article>)}
-          {live.partial && <article className="transcript-row transcript-row--partial" aria-hidden="true"><div className="transcript-original"><span className="transcript-sequence"><Icon name="wave" size={16} /></span><p dir="auto">{live.partial}<span className="partial-caret" /></p></div><div className="transcript-translations"><span className="translation-empty">Waiting for a complete phrase…</span></div></article>}
-        </div>
-        {!followingLatest && <Button className="live-jump-latest" size="sm" icon="chevronDown" onClick={jumpToLatest}>Jump to latest</Button>}
-      </Card>
-      <aside className="live-control-column">
-        <Card className="live-control-card" raised>
-          <div className={`mic-orb mic-orb--${live.state}`}><span className="mic-orb__pulse" /><Icon name={live.state === 'live' ? 'microphone' : live.state === 'ended' ? 'check' : 'wave'} size={31} /></div>
-          <div className="live-control-card__copy"><h2>{live.state === 'idle' ? 'Start interpretation' : live.state === 'live' ? 'Listening now' : live.state === 'ended' ? 'Session complete' : presentation.label}</h2><p dir={live.error ? 'auto' : undefined}>{live.state === 'idle' ? 'You’ll be asked for microphone access.' : live.state === 'live' ? 'Speak naturally. Short pauses help translations arrive sooner.' : live.state === 'ended' ? 'The final transcript has been reconciled with the server.' : live.error || 'Preparing the secure live connection…'}</p></div>
-          <LevelMeter active={live.state === 'live'} />
-          {terminalSession || live.state === 'ended' ? <Link className={buttonClassName({ variant: 'primary', size: 'lg' })} href={`/history/${sessionId}`}><Icon name="history" size={19} />View transcript</Link> : live.state === 'idle' || live.state === 'error' ? <Button variant="primary" size="lg" icon="microphone" onClick={() => void live.start()}>{live.state === 'error' ? 'Try again' : 'Start interpretation'}</Button> : <Button variant="danger" size="lg" icon="stop" loading={live.state === 'stopping'} disabled={live.state === 'requesting'} onClick={() => void live.stop()}>End session</Button>}
-          <p className="live-privacy"><Icon name="shield" size={14} />Audio is streamed only while this control is active.</p>
-        </Card>
-        <Card className="live-tips"><h3><Icon name="spark" size={17} />For clearer interpretation</h3><ul><li>Keep the microphone close to the speaker.</li><li>Reduce overlapping speech where possible.</li><li>A short pause marks the end of a phrase.</li></ul></Card>
-      </aside>
-    </div>
+  const archived = Boolean(session.archivedAt)
+  const saved = session.status === 'completed' || session.status === 'failed' || state === 'ended'
+  const active = state === 'live' || state === 'reconnecting' || state === 'stopping'
+  const owner = live.access?.isOwner ?? demo
+  const canRecord = live.access?.permission === 'record' || demo
+  const occupied = live.recording.active && !active && state !== 'connecting' && state !== 'requesting'
+  const languageSet = session.recognitionLanguages?.length ? session.recognitionLanguages : [session.sourceLanguage]
+  const label = archived ? 'Archived' : occupied ? 'Live' : live.paused ? 'Audio paused' : stateLabel[state]
+  const speakers = [...new Set(live.segments.map(segment => segment.speakerId).filter(Boolean))]
+  const latestSequence = live.segments.at(-1)?.sequence ?? 0
+  return <div className="live-page" data-immersive={immersive || undefined} data-reading-size={largeText ? 'large' : 'standard'}>
+    <header className="live-header">
+      <div className="live-header__identity"><h1 dir="auto">{session.title}</h1><div className="live-languages"><RecognitionLanguageMenu value={languageSet} disabled={!owner||archived||live.recording.active||active} onSave={live.changeRecognition} /><Icon name="arrowRight" size={14} /><LanguageSelect label={t("Your translation")} value={session.targetLanguage} disabled={live.languageBusy} onChange={value => void live.changeLanguage(value)} />{session.diarization && <span className="live-speaker-mode"><Icon name="users" size={14} />{t("Speaker labels")}</span>}</div></div>
+      <div className="live-session-state"><Badge tone={state === 'error' ? 'danger' : active ? 'accent' : 'neutral'} dot={state === 'live' && !live.paused}>{t(label)}</Badge><time>{formatDuration(live.elapsedMs) === 'Not started' ? '00:00' : formatDuration(live.elapsedMs)}</time>{demo && <span className="live-demo-note">{t("Prepared conversation")}</span>}<span className="sr-only" role="status">{t("Interpretation status:")}{' '}{t(label)}</span></div>
+    </header>
+    {archived && <div className="live-archive-notice"><Icon name="folder" size={17} /><span>{session.archiveReason === 'inactivity' ? t("Archived after inactivity.") : t("This session is archived.")} {t("Unarchive it to add more recordings; your existing transcript stays intact.")}</span></div>}
+    {live.translationConfigured === false && <div className="translation-availability"><Icon name="globe" size={14} /><span>{t("Translation is not connected yet. Original captions are available.")}</span></div>}
+    {live.error && <div className="live-notice" role={state === 'error' ? 'alert' : 'status'}><Icon name="warning" size={18} /><span>{t(live.error)}</span></div>}
+    <div className="reader-actions"><SegmentedControl aria-label={t("Transcript display")} value={display} onChange={value => setDisplay(value as typeof display)} items={[{ value: 'parallel', label: t("Bilingual") }, { value: 'source', label: t("Original") }, { value: 'translation', label: t("Translation") }]} /><div className="reader-actions__tools">{owner && <Button size="sm" icon="users" onClick={() => setShareOpen(true)}>{t("Share")}</Button>}<TranscriptPiPButton segments={live.segments} title={session.title} sourceLanguage={languageSet.length > 1 ? 'auto' : session.sourceLanguage} targetLanguage={session.targetLanguage} paused={live.paused} /><Button size="sm" variant="ghost" aria-pressed={largeText} onClick={() => setLargeText(value => !value)}><span className="reader-text-icon">{t("Aa")}</span>{largeText ? t("Standard text") : t("Larger text")}</Button><Button size="sm" variant="ghost" icon="external" aria-pressed={immersive} onClick={() => setImmersive(value => !value)}>{immersive ? t("Exit focus") : t("Focus view")}</Button></div></div>
+    <div className="live-reader"><TranscriptViewport sessionId={sessionId} segments={live.segments} sourceLanguage={languageSet.length > 1 ? 'auto' : session.sourceLanguage} targetLanguage={session.targetLanguage} key={session.targetLanguage} live={active||occupied} playback={transportMode==='playback'&&!active&&!occupied&&player.ready.length?{timeMs:player.positionMs,playing:player.playing,seekToken:player.seekToken}:undefined} onSeekTime={player.ready.length?value=>{setTransportMode('playback');player.seek(value)}:undefined} display={display} compact={live.compact} emptyTitle={state === 'idle' ? t("A conversation starts with a voice") : state === 'ended' ? t("No speech captured") : t("Listening for the first words…")} emptyDescription={demo ? t("Play the prepared conversation to follow language changes, speakers and growing translations.") : canRecord ? t("Start interpretation when you are ready. Your microphone stays off until then.") : t("The conversation will appear here when someone starts recording.")} /></div>
+    <SessionTransport player={player} mode={transportMode} onModeChange={setTransportMode} recording={active||occupied||state==='requesting'||state==='connecting'} recordingPanel={<div className="live-dock"><div className="live-dock__signal"><span className="live-wave" data-active={active && !live.paused || undefined} aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</span><div><strong>{occupied ? t('{name} is recording',{name:live.recording.holderName || t('Another viewer')}) : live.paused ? t("Audio paused") : active ? demo ? t("Conversation in progress") : t("Listening to your microphone") : archived ? t("Archived · read-only") : saved ? t("Recording saved")  : demo ? t("Ready to play") : t("Ready to listen")}</strong><span>{demo ? t("Simulated audio · no microphone recording") : !canRecord ? t("Shared with you · read only") : occupied ? t("You are following the live conversation") : t("Only one participant records at a time")}</span></div></div><div className="live-dock__controls">{!canRecord ? <Badge>{t("Read only")}</Badge> : occupied ? <>{owner && <><Button onClick={() => void live.stopOtherRecorder()}>{t("Stop their recording")}</Button><Button variant="primary" onClick={() => {player.pause();void start(true)}}>{t("Take over recording")}</Button></>}</> : archived && owner ? <Button variant="primary" icon="history" loading={live.archiveBusy} onClick={() => void live.unarchive()}>{t("Unarchive to continue")}</Button> : archived ? <Badge>{t("Archived")}</Badge> : state === 'idle' || state === 'error' || state === 'ended' ? <>{saved && !guest && <Link className={buttonClassName()} href={`/history/${sessionId}`}>{t("View transcript")}</Link>}<Button variant="primary" icon="play" onClick={() => {player.pause();void start()}}>{saved || live.segments.length > 0 ? t("Continue recording") : demo ? t("Play demo sequence") : t("Start recording")}</Button></> : <>{state === 'live' && <Button icon={live.paused ? 'play' : 'pause'} onClick={live.togglePause}>{live.paused ? t("Resume audio") : t("Pause audio")}</Button>}<Button variant="danger" icon="stop" loading={state === 'stopping'} disabled={state === 'requesting'} onClick={() => void live.stop()}>{t("Stop recording")}</Button></>}</div></div>} />
+    {owner && shareOpen && <SharingDialog sessionId={sessionId} open={shareOpen} onClose={() => setShareOpen(false)} />}
+    <footer className="live-footnote"><span>{speakers.length ? `${t('{count} voices',{count:speakers.length})} · ` : ''}{latestSequence ? t('Latest phrase {number}',{number:latestSequence}) : t("Your conversation will appear above")}</span><span>{t("Words may refine while speech is in progress.")}</span></footer>
   </div>
 }

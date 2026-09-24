@@ -1,0 +1,173 @@
+@layer tl.components {
+  /* The positioner. `useAnchoredPosition` writes --_x/--_y here and nothing
+   * else touches `translate`, which is what lets `transform` carry the entrance
+   * and exit: the two compose, so a reposition mid-scroll moves the resting
+   * point without fighting the transition, and the panel never trails behind
+   * its anchor on a laggy interpolation. It has to be `transform` rather than
+   * the individual `scale` property because the paired popover recipes list
+   * `transform` — animating `scale` would not be covered and would snap. */
+  .tl-popover {
+    --_arrow: 10px;
+    --_corner: 14px;
+    /* The entrance vector lives on the positioner as two private properties
+     * rather than as four separate @starting-style blocks, so the per-side
+     * rules below only have to say which way the panel travels and the
+     * from-state is written once. It is the small lift, not Dialog's medium
+     * one: a popover is anchored to something a few pixels away, and eight
+     * pixels of travel would visibly detach it from that trigger before it
+     * arrived. */
+    --_from-x: 0px;
+    --_from-y: 0px;
+
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--tl-z-popover);
+    width: max-content;
+    max-width: calc(100vw - var(--tl-space-8) * 2);
+    translate: var(--_x, 0) var(--_y, 0);
+
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+    transition: var(--tl-transition-popover-enter);
+  }
+
+  /* The vector always points away from the trigger, so a panel that opens
+   * below it starts nearer the trigger and settles outward — the movement is
+   * what says "this came out of that". A panel that started away from its
+   * trigger and moved toward it would read as something arriving from
+   * elsewhere and landing on the control by chance.
+   *
+   * Two sets of selectors for one vector, on purpose. `data-side` is written by
+   * the positioning hook in a layout effect that reads `offsetWidth` first, and
+   * that read is the element's first style computation — the one at which
+   * `@starting-style` is consumed. A vector keyed on `data-side` alone would
+   * therefore be zero on every entrance. `data-placement` is the REQUESTED
+   * placement, rendered by React, so it exists at that first computation; the
+   * `data-side` rules come later in source so the measured side wins the
+   * cascade the moment it lands, which is what keeps a flipped panel's exit
+   * pointing the right way. */
+  .tl-popover[data-placement^='bottom'] { --_from-y: calc(-1 * var(--tl-lift-sm)); }
+  .tl-popover[data-placement^='top'] { --_from-y: var(--tl-lift-sm); }
+  .tl-popover[data-placement^='right'] { --_from-x: calc(-1 * var(--tl-lift-sm)); }
+  .tl-popover[data-placement^='left'] { --_from-x: var(--tl-lift-sm); }
+
+  /* Growing from the edge nearest the trigger is what ties the panel to what
+   * was clicked; a centre-origin scale reads as an unrelated thing appearing. */
+  .tl-popover[data-side='bottom'] {
+    --_from-y: calc(-1 * var(--tl-lift-sm));
+    transform-origin: var(--_arrow-x, 50%) 0;
+  }
+  .tl-popover[data-side='top'] {
+    --_from-y: var(--tl-lift-sm);
+    transform-origin: var(--_arrow-x, 50%) 100%;
+  }
+  .tl-popover[data-side='right'] {
+    --_from-x: calc(-1 * var(--tl-lift-sm));
+    transform-origin: 0 var(--_arrow-y, 50%);
+  }
+  .tl-popover[data-side='left'] {
+    --_from-x: var(--tl-lift-sm);
+    transform-origin: 100% var(--_arrow-y, 50%);
+  }
+
+  @starting-style {
+    .tl-popover[data-state='entering'] {
+      opacity: 0;
+      transform: translate(var(--_from-x), var(--_from-y)) scale(var(--tl-zoom-subtle));
+    }
+  }
+
+  /* The exit mirrors the entrance, back along the same vector. Focus has
+   * already returned to the trigger by this point; only the pointer is left to
+   * neutralise, or the panel spends its whole fade swallowing clicks aimed at
+   * the page underneath it. */
+  .tl-popover[data-state='exiting'] {
+    opacity: 0;
+    transform: translate(var(--_from-x), var(--_from-y)) scale(var(--tl-zoom-subtle));
+    transition: var(--tl-transition-popover-exit);
+    pointer-events: none;
+  }
+
+  .tl-popover__panel {
+    /* The floor is what keeps flipping honest. Clamped strictly to the space
+     * available, a panel never overflows, so the flip logic never sees an
+     * overflow and a trigger 40px from the bottom of the window would get a
+     * 40px-tall scrolling panel instead of one that opens upward. Refusing to
+     * shrink past a usable size makes it overflow, and overflowing is what asks
+     * to be flipped. */
+    max-block-size: max(var(--_available-height, 100dvh), 9rem);
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    padding: var(--tl-space-8);
+    font-size: var(--tl-text-sm);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text);
+    background: var(--tl-overlay-bg);
+    border: 1px solid var(--tl-overlay-border);
+    border-radius: var(--tl-radius-md);
+    box-shadow: var(--tl-elevation-md);
+    scrollbar-width: thin;
+    scrollbar-color: var(--tl-border-strong) transparent;
+  }
+
+  /* -- Arrow ---------------------------------------------------------------
+   * A rotated square whose centre sits on the panel's border line. It is a
+   * sibling of the panel and absolutely positioned, so it paints above it and
+   * its own opaque background hides the segment of panel border running
+   * underneath — which is what turns two separate shapes into one outline with
+   * a point on it. Only the two outward-facing borders are drawn, for the same
+   * reason. */
+  .tl-popover__arrow {
+    position: absolute;
+    width: var(--_arrow);
+    height: var(--_arrow);
+    background: var(--tl-overlay-bg);
+    border: 0 solid var(--tl-overlay-border);
+    rotate: 45deg;
+  }
+
+  .tl-popover[data-side='bottom'] .tl-popover__arrow {
+    top: 0;
+    /* Clamped away from the corners: an arrow on the rounded corner of the
+     * panel points at nothing and leaves a notch in the border. */
+    left: clamp(var(--_corner), var(--_arrow-x, 50%), calc(100% - var(--_corner)));
+    translate: -50% -50%;
+    border-width: 1px 0 0 1px;
+  }
+
+  .tl-popover[data-side='top'] .tl-popover__arrow {
+    bottom: 0;
+    left: clamp(var(--_corner), var(--_arrow-x, 50%), calc(100% - var(--_corner)));
+    translate: -50% 50%;
+    border-width: 0 1px 1px 0;
+  }
+
+  .tl-popover[data-side='right'] .tl-popover__arrow {
+    left: 0;
+    top: clamp(var(--_corner), var(--_arrow-y, 50%), calc(100% - var(--_corner)));
+    translate: -50% -50%;
+    border-width: 0 0 1px 1px;
+  }
+
+  .tl-popover[data-side='left'] .tl-popover__arrow {
+    right: 0;
+    top: clamp(var(--_corner), var(--_arrow-y, 50%), calc(100% - var(--_corner)));
+    translate: 50% -50%;
+    border-width: 1px 1px 0 0;
+  }
+
+  @media (forced-colors: active) {
+    .tl-popover__panel {
+      border-color: CanvasText;
+    }
+    /* The shared background trick fails here: forced colors flattens both
+     * surfaces to Canvas, so the arrow keeps all four borders and reads as a
+     * small diamond attached to the panel rather than as a seamless point. */
+    .tl-popover__arrow {
+      border-width: 1px;
+      border-color: CanvasText;
+    }
+  }
+}

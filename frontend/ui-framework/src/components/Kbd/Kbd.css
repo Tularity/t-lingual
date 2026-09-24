@@ -1,0 +1,72 @@
+@layer tl.components {
+  .tl-kbd {
+    --_bg: var(--tl-surface-elevated);
+    --_fg: var(--tl-text-secondary);
+    --_border: var(--tl-border);
+    --_h: 20px;
+    --_fs: var(--tl-text-xs);
+
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tl-space-2);
+    vertical-align: middle;
+    font-family: inherit;
+  }
+
+  .tl-kbd[data-size='sm'] {
+    --_h: 17px;
+    --_fs: var(--tl-text-2xs);
+  }
+
+  .tl-kbd__key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    min-width: var(--_h);
+    height: var(--_h);
+    padding-inline: var(--tl-space-3);
+
+    /* Inherits the UI face rather than taking the mono stack a <kbd> would
+     * otherwise get from the UA sheet. A key cap is a label, not code, and the
+     * mono families draw ⌘ and ⇧ at a visibly different weight from the Latin
+     * letters they sit next to. */
+    font-family: inherit;
+    font-size: var(--_fs);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-none);
+    white-space: nowrap;
+
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-xs);
+    /* One hairline of depth, standing in for the bevel of a physical key. Any
+     * more and a hint in a menu row starts competing with the menu item. */
+    box-shadow: 0 1px 0 var(--_border);
+  }
+
+  /* Apple modifier glyphs are drawn on a much larger em square than Latin
+   * letters, so at the same font-size ⌘ next to K looks like two different
+   * type sizes. Nudging the whole key down closes the gap without needing a
+   * per-glyph rule. */
+  .tl-kbd[data-platform='apple'] .tl-kbd__key {
+    font-size: calc(var(--_fs) * 1.05);
+  }
+
+  .tl-kbd__separator {
+    color: var(--tl-text-subtle);
+    font-size: var(--tl-text-2xs);
+    user-select: none;
+  }
+
+  /* The key cap is a background plus a hairline shadow, and forced colors keeps
+   * only the border — which is enough, so nothing needs restoring. The shadow
+   * is dropped explicitly so no engine leaves a doubled edge behind. */
+  @media (forced-colors: active) {
+    .tl-kbd__key {
+      box-shadow: none;
+      border-color: CanvasText;
+    }
+  }
+}

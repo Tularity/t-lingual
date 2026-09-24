@@ -1,0 +1,52 @@
+@layer tl.components {
+  .tl-inline {
+    --_gap: var(--tl-space-4);
+
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--_gap);
+    min-width: 0;
+  }
+
+  .tl-inline[data-inline] {
+    display: inline-flex;
+  }
+
+  /* -- Gap ----------------------------------------------------------------- */
+  .tl-inline[data-gap='0']  { --_gap: var(--tl-space-0); }
+  .tl-inline[data-gap='1']  { --_gap: var(--tl-space-1); }
+  .tl-inline[data-gap='2']  { --_gap: var(--tl-space-2); }
+  .tl-inline[data-gap='3']  { --_gap: var(--tl-space-3); }
+  .tl-inline[data-gap='4']  { --_gap: var(--tl-space-4); }
+  .tl-inline[data-gap='5']  { --_gap: var(--tl-space-5); }
+  .tl-inline[data-gap='6']  { --_gap: var(--tl-space-6); }
+  .tl-inline[data-gap='7']  { --_gap: var(--tl-space-7); }
+  .tl-inline[data-gap='8']  { --_gap: var(--tl-space-8); }
+  .tl-inline[data-gap='9']  { --_gap: var(--tl-space-9); }
+  .tl-inline[data-gap='10'] { --_gap: var(--tl-space-10); }
+  .tl-inline[data-gap='11'] { --_gap: var(--tl-space-11); }
+  .tl-inline[data-gap='12'] { --_gap: var(--tl-space-12); }
+  .tl-inline[data-gap='14'] { --_gap: var(--tl-space-14); }
+  .tl-inline[data-gap='16'] { --_gap: var(--tl-space-16); }
+  .tl-inline[data-gap='20'] { --_gap: var(--tl-space-20); }
+  .tl-inline[data-gap='24'] { --_gap: var(--tl-space-24); }
+
+  /* -- Alignment ----------------------------------------------------------- */
+  .tl-inline[data-align='start']    { align-items: flex-start; }
+  .tl-inline[data-align='center']   { align-items: center; }
+  .tl-inline[data-align='end']      { align-items: flex-end; }
+  .tl-inline[data-align='stretch']  { align-items: stretch; }
+  .tl-inline[data-align='baseline'] { align-items: baseline; }
+
+  .tl-inline[data-justify='start']   { justify-content: flex-start; }
+  .tl-inline[data-justify='center']  { justify-content: center; }
+  .tl-inline[data-justify='end']     { justify-content: flex-end; }
+  .tl-inline[data-justify='between'] { justify-content: space-between; }
+  .tl-inline[data-justify='around']  { justify-content: space-around; }
+  .tl-inline[data-justify='evenly']  { justify-content: space-evenly; }
+
+  .tl-inline[data-wrap='wrap']   { flex-wrap: wrap; }
+  .tl-inline[data-wrap='nowrap'] { flex-wrap: nowrap; }
+}

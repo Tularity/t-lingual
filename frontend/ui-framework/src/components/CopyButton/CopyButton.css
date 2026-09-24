@@ -1,0 +1,58 @@
+@layer tl.components {
+  /* The state tint is scoped to the variants that do not paint their own
+   * background. On `primary` or `danger` the foreground is already chosen to
+   * clear contrast against a filled surface, and dropping a green in there
+   * would break that pairing to say something the icon and the label are
+   * already saying. The doubled class is only there to out-specify
+   * `.tl-button[data-variant='…']`, which sets the same property. */
+  .tl-button.tl-copy-button[data-state='copied']:is(
+      [data-variant='default'],
+      [data-variant='subtle'],
+      [data-variant='ghost'],
+      [data-variant='link']
+    ) {
+    --_fg: var(--tl-success-fg);
+  }
+
+  .tl-button.tl-copy-button[data-state='error']:is(
+      [data-variant='default'],
+      [data-variant='subtle'],
+      [data-variant='ghost'],
+      [data-variant='link']
+    ) {
+    --_fg: var(--tl-danger-fg);
+  }
+
+  /* A short settle on the confirmation glyph, so the swap reads as a response
+   * to the press rather than as a re-render. It pops in from the mark zoom on
+   * the snappy spring — a sampled spring with a real overshoot, paired with its
+   * own settle time, because a bezier that ends dead on 1 reads as a fade
+   * rather than as something landing. The zoom token already carries the
+   * reduced-motion multiplier: at 0 the `from` frame resolves to scale(1) and
+   * the animation becomes a no-op without a second rule. */
+  .tl-copy-button[data-state='copied'] .tl-button__icon {
+    animation: tl-copy-button-settle var(--tl-duration-spring-snappy) var(--tl-ease-spring-snappy);
+  }
+
+  @keyframes tl-copy-button-settle {
+    from {
+      transform: scale(var(--tl-zoom-pop));
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+
+  /* Swapping the label changes the button's width. That is left alone rather
+   * than papered over with a guessed `min-width`, because the right reservation
+   * depends on the consumer's copy; a caller that minds the shift sets
+   * `min-width` on the instance. */
+
+  /* No forced-colors block on purpose. The tint above is never the only carrier
+   * of the outcome: the glyph changes, the label changes, and the portalled live
+   * region announces it, all of which survive high contrast intact. The one
+   * arrangement where that stops being true — `iconOnly` with no `copiedIcon`,
+   * which leaves the tint alone — is reported in development by the component
+   * rather than papered over here, because the missing glyph is the consumer's
+   * to supply. */
+}

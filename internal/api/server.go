@@ -15,6 +15,10 @@ import (
 	"github.com/Tularity/t-lingual/internal/config"
 	"github.com/Tularity/t-lingual/internal/domain"
 	"github.com/Tularity/t-lingual/internal/language"
+	"github.com/Tularity/t-lingual/internal/media"
+	"github.com/Tularity/t-lingual/internal/providers"
+	"github.com/Tularity/t-lingual/internal/rooms"
+	"github.com/Tularity/t-lingual/internal/sharing"
 	"github.com/Tularity/t-lingual/internal/store"
 	"github.com/Tularity/t-lingual/internal/translate"
 	"github.com/Tularity/t-lingual/internal/webapi"
@@ -28,6 +32,7 @@ type LiveHandler interface {
 }
 
 type Dependencies struct {
+	Media      *media.Manager
 	Config     config.Config
 	Store      *store.Store
 	Auth       *auth.Service
@@ -37,9 +42,18 @@ type Dependencies struct {
 	Translator translate.Provider
 	Live       LiveHandler
 	Logger     *slog.Logger
+	Providers  *providers.Registry
+	Rooms      *rooms.Service
+	Sharing    *sharing.Service
 }
 
 type API struct {
+	media                      *media.Manager
+	mediaAdmission             mediaAdmission
+	providers                  *providers.Registry
+	rooms                      *rooms.Service
+	sharing                    *sharing.Service
+	providerUpdateMu           sync.Mutex
 	config                     config.Config
 	store                      *store.Store
 	auth                       *auth.Service
@@ -52,6 +66,8 @@ type API struct {
 	live                       LiveHandler
 	logger                     *slog.Logger
 	loginLimiter               *ipLimiter
+	codeLimiter                *ipLimiter
+	codeGlobalLimiter          *ipLimiter
 	registrationLimiter        *ipLimiter
 	authGlobalLimiter          *ipLimiter
 	passkeyLimiter             *ipLimiter
@@ -71,6 +87,7 @@ func New(dependencies Dependencies) (*API, error) {
 		dependencies.Logger = slog.Default()
 	}
 	return &API{
+		media: dependencies.Media, providers: dependencies.Providers, rooms: dependencies.Rooms, sharing: dependencies.Sharing,
 		config:                 dependencies.Config,
 		store:                  dependencies.Store,
 		auth:                   dependencies.Auth,
@@ -86,6 +103,8 @@ func New(dependencies Dependencies) (*API, error) {
 		// flow cannot starve the other. A global budget bounds distributed
 		// address churn; durable ceremony capacity provides a second layer.
 		loginLimiter:               newIPLimiter(120, time.Minute, 8192),
+		codeLimiter:                newIPLimiter(3, time.Minute, 8192),
+		codeGlobalLimiter:          newIPLimiter(60, time.Minute, 1),
 		registrationLimiter:        newIPLimiter(20, time.Minute, 8192),
 		authGlobalLimiter:          newIPLimiter(300, time.Minute, 1),
 		passkeyLimiter:             newIPLimiter(60, time.Minute, 8192),
@@ -100,11 +119,13 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /health/live", a.public(a.liveHealth))
 	mux.HandleFunc("GET /health/ready", a.public(a.readyHealth))
 	mux.HandleFunc("GET /api/v1/meta", a.public(a.meta))
+	mux.HandleFunc("GET /api/v1/site-content", a.public(a.siteContent))
 
 	mux.HandleFunc("POST /api/v1/auth/register/begin", a.public(a.beginRegistration))
 	mux.HandleFunc("POST /api/v1/auth/register/finish", a.public(a.finishRegistration))
 	mux.HandleFunc("POST /api/v1/auth/login/begin", a.public(a.beginLogin))
 	mux.HandleFunc("POST /api/v1/auth/login/finish", a.public(a.finishLogin))
+	mux.HandleFunc("POST /api/v1/auth/code", a.public(a.redeemCode))
 	mux.HandleFunc("POST /api/v1/auth/logout", a.authenticated(a.logout))
 	mux.HandleFunc("GET /api/v1/auth/me", a.authenticated(a.me))
 	mux.HandleFunc("GET /api/v1/auth/sessions", a.authenticated(a.listBrowserSessions))
@@ -123,19 +144,51 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/sessions/{sessionID}", a.authenticated(a.getSession))
 	mux.HandleFunc("PATCH /api/v1/sessions/{sessionID}", a.authenticated(a.updateSession))
 	mux.HandleFunc("DELETE /api/v1/sessions/{sessionID}", a.authenticated(a.deleteSession))
+	mux.HandleFunc("POST /api/v1/sessions/{sessionID}/archive", a.authenticated(a.archiveSession))
+	mux.HandleFunc("DELETE /api/v1/sessions/{sessionID}/archive", a.authenticated(a.unarchiveSession))
 	mux.HandleFunc("GET /api/v1/sessions/{sessionID}/segments", a.authenticated(a.listSegments))
 	mux.HandleFunc("GET /api/v1/sessions/{sessionID}/live", a.authenticatedLive(a.serveLive))
 
 	mux.HandleFunc("GET /api/v1/settings", a.authenticated(a.getSettings))
+	mux.HandleFunc("GET /api/v1/recognition/capabilities", a.authenticated(a.getRecognitionCapabilities))
 	mux.HandleFunc("PUT /api/v1/settings", a.authenticated(a.updateSettings))
+	mux.HandleFunc("PATCH /api/v1/settings/interface", a.authenticated(a.patchInterfaceSettings))
 
 	mux.HandleFunc("GET /api/v1/admin/invitations", a.authenticated(a.listInvitations))
 	mux.HandleFunc("POST /api/v1/admin/invitations", a.authenticated(a.createInvitation))
+	mux.HandleFunc("POST /api/v1/admin/codes", a.authenticated(a.createCode))
+	mux.HandleFunc("GET /api/v1/admin/site-settings", a.authenticated(a.getAdminSiteSettings))
+	mux.HandleFunc("PUT /api/v1/admin/site-settings", a.authenticated(a.putAdminSiteSettings))
 	mux.HandleFunc("POST /api/v1/admin/invitations/{invitationID}/revoke", a.authenticated(a.revokeInvitation))
 	mux.HandleFunc("GET /api/v1/admin/users", a.authenticated(a.listUsers))
 	mux.HandleFunc("PATCH /api/v1/admin/users/{userID}", a.authenticated(a.updateUser))
 	mux.HandleFunc("GET /api/v1/admin/audit", a.authenticated(a.listAudit))
 
+	if a.sharing != nil && a.rooms != nil {
+		mux.HandleFunc("GET /api/v1/view/sessions", a.viewing(a.listViewedSessions, false))
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}", a.viewing(a.getViewedSession, false))
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/segments", a.viewing(a.viewedSegments, false))
+		mux.HandleFunc("PUT /api/v1/view/sessions/{sessionID}/recognition", a.viewing(a.setRecognition, false))
+		mux.HandleFunc("PUT /api/v1/view/sessions/{sessionID}/language", a.viewing(a.setViewerLanguage, false))
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/events", a.viewing(a.watchSession, true))
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/record", a.viewing(a.recordSession, true))
+		mux.HandleFunc("POST /api/v1/view/sessions/{sessionID}/recording/stop", a.viewing(a.stopRecorder, false))
+		mux.HandleFunc("GET /api/v1/sessions/{sessionID}/shares", a.authenticated(a.listShares))
+		mux.HandleFunc("POST /api/v1/sessions/{sessionID}/shares", a.authenticated(a.createShare))
+		mux.HandleFunc("PATCH /api/v1/sessions/{sessionID}/shares/{shareID}", a.authenticated(a.updateShare))
+		mux.HandleFunc("DELETE /api/v1/sessions/{sessionID}/shares/{shareID}", a.authenticated(a.revokeShare))
+		mux.HandleFunc("GET /api/v1/share-recipients", a.authenticated(a.shareRecipients))
+		mux.HandleFunc("POST /api/v1/share-access", a.public(a.redeemShare))
+	}
+	if a.media != nil && a.sharing != nil && a.rooms != nil {
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/audio", a.viewing(a.listAudio, false))
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/audio/{partID}", a.viewing(a.getAudio, true))
+		mux.HandleFunc("GET /api/v1/sessions/{sessionID}/bundle", a.authenticatedLive(a.getSessionBundle))
+	}
+	if a.providers != nil {
+		mux.HandleFunc("GET /api/v1/admin/providers", a.authenticated(a.getProviders))
+		mux.HandleFunc("PUT /api/v1/admin/providers", a.authenticated(a.setProviders))
+	}
 	production := a.config.Environment == config.Production
 	return webapi.Chain(
 		mux,
@@ -217,13 +270,18 @@ func (a *API) probeReadiness() readinessSnapshot {
 	}
 	results := make(chan result, 3)
 	go func() { results <- result{name: "database", err: a.store.Ping(ctx)} }()
-	if a.asr != nil {
-		go func() { results <- result{name: "asr", err: a.asr.Ready(ctx)} }()
+	asrProvider, translatorProvider := a.asr, a.translator
+	if a.providers != nil {
+		snapshot := a.providers.Snapshot()
+		asrProvider, translatorProvider = snapshot.ASR, snapshot.Translator
+	}
+	if asrProvider != nil {
+		go func() { results <- result{name: "asr", err: asrProvider.Ready(ctx)} }()
 	} else {
 		results <- result{name: "asr", err: asr.ErrDisabled}
 	}
-	if a.translator != nil {
-		go func() { results <- result{name: "translator", err: a.translator.Ready(ctx)} }()
+	if translatorProvider != nil {
+		go func() { results <- result{name: "translator", err: translatorProvider.Ready(ctx)} }()
 	} else {
 		results <- result{name: "translator", err: translate.ErrDisabled}
 	}
@@ -235,7 +293,9 @@ func (a *API) probeReadiness() readinessSnapshot {
 		state := providerHealth{Configured: configured, Ready: item.err == nil}
 		if item.err != nil {
 			state.Error = "unavailable"
-			ready = false
+			if configured || a.providers == nil {
+				ready = false
+			}
 		}
 		health[item.name] = state
 	}
@@ -247,7 +307,12 @@ func (a *API) probeReadiness() readinessSnapshot {
 }
 
 func (a *API) meta(response http.ResponseWriter, _ *http.Request) error {
-	response.Header().Set("Cache-Control", "public, max-age=300")
+	response.Header().Set("Cache-Control", "no-store")
+	asrConfigured, translatorConfigured := a.asr != nil, a.translator != nil
+	if a.providers != nil {
+		status := a.providers.Endpoints()
+		asrConfigured, translatorConfigured = status.ASRConfigured, status.TranslatorConfigured
+	}
 	webapi.WriteJSON(response, http.StatusOK, map[string]any{
 		"product":    "t-lingual",
 		"apiVersion": "v1",
@@ -257,8 +322,8 @@ func (a *API) meta(response http.ResponseWriter, _ *http.Request) error {
 			"roles":        []domain.Role{domain.RoleUser, domain.RoleAdmin},
 		},
 		"providers": map[string]any{
-			"asr":        map[string]any{"configured": a.asr != nil, "streaming": true},
-			"translator": map[string]any{"configured": a.translator != nil, "streaming": false, "autoSource": false},
+			"asr":        map[string]any{"configured": asrConfigured, "streaming": true},
+			"translator": map[string]any{"configured": translatorConfigured, "streaming": true, "autoSource": false},
 		},
 		"languages": map[string]any{
 			"supported":       language.Supported(),

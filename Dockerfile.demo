@@ -1,0 +1,12 @@
+# Explicit development preview; the production image uses Dockerfile.
+FROM node:24.20.0-alpine3.24@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/ui-framework/package.json ./ui-framework/
+RUN npm ci --ignore-scripts --no-audit --no-fund && chown -R node:node /app
+COPY --chown=node:node frontend/ ./
+USER node
+ENV PORT=5173
+EXPOSE 5173
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:5173/ || exit 1
+CMD ["npm", "run", "demo"]

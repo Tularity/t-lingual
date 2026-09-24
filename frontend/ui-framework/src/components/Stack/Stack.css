@@ -1,0 +1,62 @@
+@layer tl.components {
+  .tl-stack {
+    /* The whole styling contract. Retheming the rhythm of one stack means
+     * reassigning this, not out-specifying the seventeen rules below. */
+    --_gap: var(--tl-space-4);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    /* See the note in Stack.tsx: flex's `auto` minimum size is what makes a
+     * stack refuse to shrink past its widest unbreakable child. */
+    min-width: 0;
+  }
+
+  .tl-stack[data-inline] {
+    display: inline-flex;
+  }
+
+  /* -- Gap ------------------------------------------------------------------
+   * One rule per step because CSS cannot build a custom-property name by
+   * concatenation — `var(--tl-space-` plus a number is not expressible. The
+   * alternative is an inline style, which is exactly what the attribute exists
+   * to avoid. */
+  .tl-stack[data-gap='0']  { --_gap: var(--tl-space-0); }
+  .tl-stack[data-gap='1']  { --_gap: var(--tl-space-1); }
+  .tl-stack[data-gap='2']  { --_gap: var(--tl-space-2); }
+  .tl-stack[data-gap='3']  { --_gap: var(--tl-space-3); }
+  .tl-stack[data-gap='4']  { --_gap: var(--tl-space-4); }
+  .tl-stack[data-gap='5']  { --_gap: var(--tl-space-5); }
+  .tl-stack[data-gap='6']  { --_gap: var(--tl-space-6); }
+  .tl-stack[data-gap='7']  { --_gap: var(--tl-space-7); }
+  .tl-stack[data-gap='8']  { --_gap: var(--tl-space-8); }
+  .tl-stack[data-gap='9']  { --_gap: var(--tl-space-9); }
+  .tl-stack[data-gap='10'] { --_gap: var(--tl-space-10); }
+  .tl-stack[data-gap='11'] { --_gap: var(--tl-space-11); }
+  .tl-stack[data-gap='12'] { --_gap: var(--tl-space-12); }
+  .tl-stack[data-gap='14'] { --_gap: var(--tl-space-14); }
+  .tl-stack[data-gap='16'] { --_gap: var(--tl-space-16); }
+  .tl-stack[data-gap='20'] { --_gap: var(--tl-space-20); }
+  .tl-stack[data-gap='24'] { --_gap: var(--tl-space-24); }
+
+  /* -- Alignment ------------------------------------------------------------
+   * Mapped explicitly rather than passed through. `start` and `end` are legal
+   * box-alignment keywords in current engines, but `flex-start`/`flex-end` are
+   * what every engine has agreed on for a decade, and the prop vocabulary
+   * should not be hostage to that difference. */
+  .tl-stack[data-align='start']    { align-items: flex-start; }
+  .tl-stack[data-align='center']   { align-items: center; }
+  .tl-stack[data-align='end']      { align-items: flex-end; }
+  .tl-stack[data-align='stretch']  { align-items: stretch; }
+  .tl-stack[data-align='baseline'] { align-items: baseline; }
+
+  .tl-stack[data-justify='start']   { justify-content: flex-start; }
+  .tl-stack[data-justify='center']  { justify-content: center; }
+  .tl-stack[data-justify='end']     { justify-content: flex-end; }
+  .tl-stack[data-justify='between'] { justify-content: space-between; }
+  .tl-stack[data-justify='around']  { justify-content: space-around; }
+  .tl-stack[data-justify='evenly']  { justify-content: space-evenly; }
+
+  .tl-stack[data-wrap='wrap']   { flex-wrap: wrap; }
+  .tl-stack[data-wrap='nowrap'] { flex-wrap: nowrap; }
+}

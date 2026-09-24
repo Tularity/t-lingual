@@ -77,6 +77,12 @@ func (c *Client) CreateInvitation(ctx context.Context, ttl time.Duration) (Creat
 	return response, err
 }
 
+func (c *Client) CreateCode(ctx context.Context, input CreateCodeRequest) (CreateCodeResponse, error) {
+	var response CreateCodeResponse
+	err := c.do(ctx, http.MethodPost, CodesPath, input, &response)
+	return response, err
+}
+
 func (c *Client) ListInvitations(ctx context.Context, limit, offset int) (InvitationListResponse, error) {
 	var response InvitationListResponse
 	err := c.do(ctx, http.MethodGet, paginatedPath(InvitationsPath, limit, offset), nil, &response)

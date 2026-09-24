@@ -1,0 +1,301 @@
+@layer tl.components {
+  .tl-tabs {
+    --_h: 34px;
+    --_px: var(--tl-space-6);
+    --_fs: var(--tl-text-sm);
+    --_fg: var(--tl-text-secondary);
+    --_fg-active: var(--tl-text);
+    --_indicator: var(--tl-accent);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-8);
+    min-width: 0;
+  }
+
+  .tl-tabs[data-orientation='vertical'] {
+    flex-direction: row;
+  }
+
+  .tl-tabs[data-size='sm'] { --_h: 28px; --_px: var(--tl-space-5); --_fs: var(--tl-text-xs); }
+  .tl-tabs[data-size='md'] { --_h: 34px; --_px: var(--tl-space-6); --_fs: var(--tl-text-sm); }
+  .tl-tabs[data-size='lg'] { --_h: 40px; --_px: var(--tl-space-8); --_fs: var(--tl-text-md); }
+
+  /* -- Tablist ------------------------------------------------------------- */
+  .tl-tabs__list {
+    /* The active tab's offset box, written to this element's inline style by
+     * TabList's layout effect. All four are recorded even though each variant
+     * only reads the ones it needs, so the stylesheet alone decides what the
+     * indicator looks like and the component never has to know. */
+    --_indicator-x: 0px;
+    --_indicator-y: 0px;
+    --_indicator-w: 0px;
+    --_indicator-h: 0px;
+    --_bar: 2px;
+    --_indicator-bg: var(--_indicator);
+    --_indicator-radius: var(--tl-radius-round);
+
+    /* Positioned so it is the tabs' offsetParent — `offsetLeft` and `offsetTop`
+     * are only meaningful relative to this box — and isolated so the two
+     * z-indexes below cannot escape into the page's own stacking order. */
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: stretch;
+    /* An overlong strip wraps; it does not scroll. `overflow-x: auto` is the
+     * tempting one-liner and it quietly costs the focus indicator: the list's
+     * content box is exactly as tall as a tab, so the 2px ring and its 1px
+     * offset land outside it and get clipped on both edges. Doing scrolling
+     * properly needs a non-scrolling viewport around the scroller plus scroll
+     * affordances, which is a larger component than this one; wrapping keeps
+     * every tab and every ring visible in the meantime. */
+    flex-wrap: wrap;
+  }
+
+  .tl-tabs[data-orientation='vertical'] .tl-tabs__list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .tl-tabs__list[data-full-width] .tl-tabs__tab {
+    flex: 1 1 0;
+  }
+
+  /* -- The sliding indicator ------------------------------------------------
+   * One pseudo-element on the list, moved with `translate` and resized with
+   * `width` and `height`, rather than a marker drawn on each tab. A single
+   * element that moves between tabs is what turns a selection change into a
+   * motion the eye can follow from the old tab to the new one; two markers
+   * cross-fading read as a flicker.
+   *
+   * It is placed on both axes, not pinned to the list's bottom edge, because
+   * the list wraps: the active tab may be on any row, and the bar has to sit
+   * under that row. `left: 0` is physical on purpose — `offsetLeft` is a
+   * physical measurement and stays physical under RTL, so anchoring to the
+   * inline start would put the marker on the wrong side of a mirrored list.
+   *
+   * Nothing is drawn until a first measurement has landed: an indicator
+   * transitioning from its 0px defaults would visibly grow out of the list's
+   * corner on first paint. */
+  .tl-tabs__list::after {
+    content: '';
+    position: absolute;
+    display: none;
+    z-index: var(--tl-z-base);
+    background: var(--_indicator-bg);
+    border-radius: var(--_indicator-radius);
+    pointer-events: none;
+  }
+
+  .tl-tabs__list[data-indicator]::after {
+    display: block;
+  }
+
+  /* Transitions only once the first position has been on screen for a frame.
+   * The component writes `measured` with the first geometry and promotes to
+   * `ready` a frame later; enabling the transition any earlier makes the bar
+   * animate in from x=0 when the page loads.
+   *
+   * The durations are multiplied by --tl-motion-distance rather than the
+   * translate. Scaling the position is the instinctive reading of that token
+   * and it is wrong here: at zero it would park the indicator on the first tab
+   * forever. Scaling the duration means the bar still lands on the selected tab
+   * under reduced motion, it just arrives without travelling. */
+  .tl-tabs__list[data-indicator='ready']::after {
+    transition:
+      translate calc(var(--tl-duration-lg) * var(--tl-motion-distance)) var(--tl-ease-signature),
+      width calc(var(--tl-duration-lg) * var(--tl-motion-distance)) var(--tl-ease-signature),
+      height calc(var(--tl-duration-lg) * var(--tl-motion-distance)) var(--tl-ease-signature),
+      background-color var(--tl-duration-2xs) var(--tl-ease-out);
+  }
+
+  /* -- Tab ----------------------------------------------------------------- */
+  .tl-tabs__tab {
+    position: relative;
+    /* Above the indicator, which in the pill variant is the surface behind the
+     * label rather than a rule beneath it. */
+    z-index: var(--tl-z-raised);
+    flex: none;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tl-space-3);
+
+    height: var(--_h);
+    padding-inline: var(--_px);
+    font-family: inherit;
+    font-size: var(--_fs);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-none);
+    white-space: nowrap;
+    user-select: none;
+
+    color: var(--_fg);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-tabs__tab:hover:not(:disabled) {
+    color: var(--_fg-active);
+  }
+
+  .tl-tabs__tab[data-state='active'] {
+    color: var(--_fg-active);
+  }
+
+  .tl-tabs__tab:disabled {
+    color: var(--tl-text-disabled);
+    cursor: not-allowed;
+  }
+
+  /* -- Variant: line -------------------------------------------------------
+   * The bar is the list's indicator pseudo-element, placed from the active
+   * tab's measured box. The failure mode of measured underlines — a tab whose
+   * width changed after a webfont loaded, leaving the bar a few pixels short —
+   * is covered by the component observing the active tab's size, not only the
+   * list's.
+   *
+   * Each tab still reserves 2px of transparent border along the indicator
+   * edge. It keeps the label clear of the bar, and it is what the forced
+   * colours block recolours, so the active tab stays identifiable there without
+   * changing size the moment the mode switches.
+   *
+   * The pixel of negative margin lets the 2px bar sit on top of the list's 1px
+   * rule rather than stacked above it. It is also the reason the list above
+   * must never become a scroll container: that one pixel of overflow is enough
+   * for a browser to resolve the cross axis to `auto` and hang a vertical
+   * scrollbar off the tab strip. */
+  .tl-tabs[data-variant='line'] .tl-tabs__list {
+    gap: var(--tl-space-6);
+    border-block-end: 1px solid var(--tl-divider);
+  }
+
+  .tl-tabs[data-variant='line'] .tl-tabs__tab {
+    margin-block-end: -1px;
+    border-block-end: var(--_bar) solid transparent;
+  }
+
+  /* The bar's y is the bottom of the active tab's own row, which is how it
+   * follows a tab onto a second line when the strip wraps. */
+  .tl-tabs[data-variant='line'] .tl-tabs__list::after {
+    top: 0;
+    left: 0;
+    width: var(--_indicator-w);
+    height: var(--_bar);
+    translate:
+      var(--_indicator-x)
+      calc(var(--_indicator-y) + var(--_indicator-h) - var(--_bar));
+  }
+
+  .tl-tabs[data-variant='line'][data-orientation='vertical'] .tl-tabs__list {
+    gap: var(--tl-space-2);
+    border-block-end: 0;
+    border-inline-end: 1px solid var(--tl-divider);
+  }
+
+  .tl-tabs[data-variant='line'][data-orientation='vertical'] .tl-tabs__tab {
+    justify-content: flex-start;
+    margin-block-end: 0;
+    margin-inline-end: -1px;
+    border-block-end: 0;
+    border-inline-end: var(--_bar) solid transparent;
+  }
+
+  /* A vertical list is a single column, so the bar can hang off the list's
+   * inline-end edge — logical here, because that edge is where the rule is in
+   * both directions — and only the y axis is measured. The -1px matches the
+   * tabs' negative margin so the bar overlaps the rule the same way. */
+  .tl-tabs[data-variant='line'][data-orientation='vertical'] .tl-tabs__list::after {
+    left: auto;
+    inset-inline-end: -1px;
+    width: var(--_bar);
+    height: var(--_indicator-h);
+    translate: 0 var(--_indicator-y);
+  }
+
+  /* -- Variant: pill -------------------------------------------------------
+   * The raised surface behind the active tab is the sliding indicator, so the
+   * tab itself paints nothing on selection. The transparent border on each tab
+   * is load-bearing rather than decorative: the forced colors block below only
+   * recolours it, so the active state can appear in high contrast without the
+   * tab changing size the moment it does. */
+  .tl-tabs[data-variant='pill'] .tl-tabs__list {
+    --_indicator-bg: var(--tl-surface);
+    --_indicator-radius: calc(var(--tl-radius-md) - 3px);
+
+    gap: var(--tl-space-2);
+    padding: 3px;
+    background: var(--tl-surface-sunken);
+    border: 1px solid var(--tl-border-subtle);
+    border-radius: var(--tl-radius-md);
+    /* Hugs its content on the cross axis. Left to stretch, the sunken track
+     * runs the full width of the widest panel and the pills float in the middle
+     * of an otherwise empty bar. */
+    align-self: flex-start;
+  }
+
+  /* Asking for full width is asking for the track to stretch too. The extra
+   * class in the selector is only there to match the pill rule's specificity so
+   * that source order decides, which is what puts this one on top. */
+  .tl-tabs .tl-tabs__list[data-full-width] {
+    align-self: stretch;
+  }
+
+  .tl-tabs[data-variant='pill'] .tl-tabs__tab {
+    border: 1px solid transparent;
+    border-radius: calc(var(--tl-radius-md) - 3px);
+  }
+
+  /* `offsetLeft` is measured from the list's padding edge and `left: 0`
+   * resolves to that same edge, so the 3px of track padding needs no
+   * compensation: the surface lands exactly under the tab in either
+   * orientation. */
+  .tl-tabs[data-variant='pill'] .tl-tabs__list::after {
+    top: 0;
+    left: 0;
+    width: var(--_indicator-w);
+    height: var(--_indicator-h);
+    translate: var(--_indicator-x) var(--_indicator-y);
+    box-shadow: var(--tl-elevation-xs);
+  }
+
+  /* -- Panel ---------------------------------------------------------------
+   * No `display` is declared here on purpose. Any author-level `display` beats
+   * the user agent's `[hidden] { display: none }`, so setting one would leave
+   * every kept-mounted panel painted on top of the selected one. */
+  .tl-tabs__panel {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .tl-tabs__panel[hidden] {
+    display: none;
+  }
+
+  /* Forced colors strips the indicator's fill and shadow, which is everything
+   * the pseudo-element is. Rather than leave a half-drawn box sliding about, it
+   * is dropped entirely and the active tab's own reserved border takes over —
+   * a border colour survives the mode, and `--tl-accent` already resolves to
+   * Highlight there. */
+  @media (forced-colors: active) {
+    .tl-tabs__list[data-indicator]::after {
+      display: none;
+    }
+    .tl-tabs[data-variant='line'] .tl-tabs__tab[data-state='active'] {
+      border-block-end-color: var(--_indicator);
+    }
+    .tl-tabs[data-variant='line'][data-orientation='vertical'] .tl-tabs__tab[data-state='active'] {
+      border-inline-end-color: var(--_indicator);
+    }
+    .tl-tabs[data-variant='pill'] .tl-tabs__tab[data-state='active'] {
+      border-color: Highlight;
+    }
+    .tl-tabs__tab:disabled {
+      color: GrayText;
+    }
+  }
+}

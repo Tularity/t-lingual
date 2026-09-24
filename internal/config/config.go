@@ -133,9 +133,6 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if environment == Production && (!asr.Enabled() || !translator.Enabled()) {
-		return Config{}, errors.New("production requires both TLINGUAL_ASR_BASE_URL and TLINGUAL_TRANSLATOR_BASE_URL")
-	}
 	if environment == Production && !allowInsecureProviders {
 		for name, providerConfig := range map[string]Provider{"ASR": asr, "translator": translator} {
 			if providerConfig.Enabled() && providerConfig.BaseURL.Scheme != "https" {

@@ -1,0 +1,96 @@
+@layer tl.components {
+  .tl-progress {
+    --_track: var(--tl-surface-sunken);
+    --_indicator: var(--tl-accent);
+    --_thickness: 6px;
+    /* A literal, not a token: every duration token carries --tl-motion-scale,
+     * and halving a loop's period does not shorten anything, it doubles the
+     * sweep rate — more movement from the setting that asks for less. The
+     * sweep keeps its own tempo whatever the preference says. */
+    --_duration: 1400ms;
+
+    display: block;
+    position: relative;
+    width: 100%;
+    height: var(--_thickness);
+    overflow: hidden;
+
+    background: var(--_track);
+    border-radius: var(--tl-radius-round);
+  }
+
+  .tl-progress[data-size='sm'] { --_thickness: 4px; }
+  .tl-progress[data-size='md'] { --_thickness: 6px; }
+  .tl-progress[data-size='lg'] { --_thickness: 10px; }
+
+  .tl-progress[data-variant='accent']  { --_indicator: var(--tl-accent); }
+  .tl-progress[data-variant='success'] { --_indicator: var(--tl-success-solid); }
+  .tl-progress[data-variant='danger']  { --_indicator: var(--tl-danger-solid); }
+  .tl-progress[data-variant='warning'] { --_indicator: var(--tl-warning-solid); }
+  .tl-progress[data-variant='info']    { --_indicator: var(--tl-info-solid); }
+
+  .tl-progress__indicator {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--_indicator);
+    border-radius: inherit;
+
+    /* A scale transform rather than an animated `width`. The bar updates on
+     * every chunk of an upload, and width triggers layout for the whole
+     * subtree each time while a transform stays on the compositor. */
+    transform: scaleX(var(--_fraction, 0));
+    transform-origin: left center;
+    transition: transform var(--tl-duration-lg) var(--tl-ease-out);
+  }
+
+  /* `transform-origin: left` is the wrong edge in a right-to-left document —
+   * the bar would fill away from the start of the line. */
+  [dir='rtl'] .tl-progress__indicator {
+    transform-origin: right center;
+  }
+
+  /* -- Indeterminate --------------------------------------------------------
+   * A short segment sweeping the track. It keeps moving under
+   * `prefers-reduced-motion` for the same reason the Spinner keeps spinning:
+   * this motion IS the message, and a bar that stops reads as a hung upload. */
+  .tl-progress[data-indeterminate] .tl-progress__indicator {
+    width: 35%;
+    transform: none;
+    transition: none;
+    animation: tl-progress-sweep var(--_duration) var(--tl-ease-in-out) infinite;
+  }
+
+  /* An infinite animation never reports finished, and `usePresence` waits on
+   * every animation in the subtree before it lets an overlay unmount — so an
+   * indeterminate bar inside a closing dialog would hold that dialog on screen
+   * until the exit backstop fired. Cancelled outright on the way out. The
+   * ancestor is pinned to a framework surface (`data-tl`) so a consumer's own
+   * `data-state` vocabulary cannot freeze a bar that is not going anywhere. */
+  [data-tl][data-state='exiting'] .tl-progress[data-indeterminate] .tl-progress__indicator {
+    animation: none;
+  }
+
+  @keyframes tl-progress-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(calc(100% / 0.35));
+    }
+  }
+
+  /* Both the track and the indicator are background-color, so in forced colors
+   * the whole control disappears into the page. The track is redrawn as a
+   * border and the indicator takes the system highlight. */
+  @media (forced-colors: active) {
+    .tl-progress {
+      border: 1px solid CanvasText;
+      background: Canvas;
+    }
+
+    .tl-progress__indicator {
+      background: Highlight;
+    }
+  }
+}

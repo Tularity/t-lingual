@@ -1,0 +1,174 @@
+@layer tl.components {
+  .tl-switch {
+    --_track-w: 34px;
+    --_track-h: 20px;
+    /* Six pixels of clearance leaves a 2px gutter on every side once the 1px
+     * track border is accounted for, which is also what makes the travel below
+     * reduce to the difference between the two track dimensions. */
+    --_thumb: calc(var(--_track-h) - 6px);
+    --_travel: calc(var(--_track-w) - var(--_track-h));
+    /* Flipped in RTL so the thumb still moves toward the inline end. CSS has no
+     * logical translate, and `inset-inline-start` alone would anchor the thumb
+     * correctly and then push it off the wrong edge. */
+    --_dir: 1;
+
+    --_track-bg: var(--tl-surface-sunken);
+    --_track-border: var(--tl-border-strong);
+    --_thumb-bg: var(--tl-text-muted);
+
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tl-space-6);
+  }
+
+  [dir='rtl'] .tl-switch {
+    --_dir: -1;
+  }
+
+  .tl-switch[data-size='sm'] { --_track-w: 28px; --_track-h: 16px; }
+  .tl-switch[data-size='md'] { --_track-w: 34px; --_track-h: 20px; }
+  .tl-switch[data-size='lg'] { --_track-w: 44px; --_track-h: 24px; }
+
+  .tl-switch[data-label-placement='start'] {
+    flex-direction: row-reverse;
+  }
+
+  /* With a description the row is two lines tall, and centring the control
+   * against both of them makes it drift away from the name it belongs to. */
+  .tl-switch[data-has-description] {
+    align-items: flex-start;
+  }
+
+  /* -- On ------------------------------------------------------------------
+   * The track darkens rather than merely saturating, and the thumb inverts with
+   * it. Both halves matter: a white thumb on amber-500 measures about 2:1 and
+   * would leave the state indicator itself failing WCAG 1.4.11, so the "on"
+   * track uses the emphasis step and the thumb takes the light surface. */
+  .tl-switch[data-checked] {
+    --_track-bg: var(--tl-accent-emphasis);
+    --_track-border: var(--tl-accent-emphasis);
+    --_thumb-bg: var(--tl-surface-elevated);
+  }
+
+  .tl-switch[data-disabled] {
+    --_track-bg: var(--tl-surface-disabled);
+    --_track-border: var(--tl-border);
+    --_thumb-bg: var(--tl-text-disabled);
+  }
+
+  /* -- Control ------------------------------------------------------------- */
+  .tl-switch__control {
+    position: relative;
+    flex: none;
+    display: block;
+    width: var(--_track-w);
+    height: var(--_track-h);
+    padding: 0;
+    background: var(--_track-bg);
+    border: 1px solid var(--_track-border);
+    border-radius: var(--tl-radius-round);
+    cursor: pointer;
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-switch__control:disabled {
+    cursor: not-allowed;
+  }
+
+  /* WCAG 2.2 SC 2.5.8 asks for 24x24 of pointer target, and the small and
+   * medium tracks are shorter than that. A transparent outset grows the target
+   * without growing the control; `min()` keeps it from clipping inward once a
+   * size is already tall enough. */
+  .tl-switch__control::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block: min(0px, calc((24px - var(--_track-h)) / -2));
+  }
+
+  .tl-switch__thumb {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: 2px;
+    width: var(--_thumb);
+    height: var(--_thumb);
+    border-radius: 50%;
+    background: var(--_thumb-bg);
+    /* `translateY(-50%)` does the vertical centring so the thumb does not have
+     * to know about the track's border width. */
+    transform: translateY(-50%) translateX(0);
+    /* The travel is deliberately not multiplied by --tl-motion-distance. That
+     * multiplier cancels decorative movement, and the thumb's position is not
+     * decoration — it is the state: scaled to zero it would sit at "off" while
+     * `aria-checked` said otherwise. Reduced motion halves the duration instead,
+     * which is what the token already does. The colour leg is shorter than the
+     * travel leg so the track reads as switched before the thumb has settled. */
+    transition:
+      transform var(--tl-duration-sm) var(--tl-ease-signature),
+      background-color var(--tl-duration-2xs) var(--tl-ease-out);
+  }
+
+  .tl-switch[data-checked] .tl-switch__thumb {
+    transform: translateY(-50%) translateX(calc(var(--_travel) * var(--_dir)));
+  }
+
+  /* -- Text ---------------------------------------------------------------- */
+  .tl-switch__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-1);
+    min-width: 0;
+  }
+
+  .tl-switch__label {
+    font-size: var(--tl-text-sm);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-snug);
+    color: var(--tl-text);
+    cursor: pointer;
+    /* Clicking the label toggles the switch, and a double click would otherwise
+     * toggle twice while selecting the words. */
+    user-select: none;
+  }
+
+  .tl-switch__description {
+    font-size: var(--tl-text-xs);
+    line-height: var(--tl-leading-snug);
+    color: var(--tl-text-muted);
+  }
+
+  .tl-switch[data-disabled] .tl-switch__label {
+    color: var(--tl-text-disabled);
+    cursor: not-allowed;
+  }
+
+  .tl-switch[data-disabled] .tl-switch__description {
+    color: var(--tl-text-disabled);
+  }
+
+  /* Forced colors discards the track fill, which is the whole of the "on"
+   * colour story. The border is what has to change instead, and the thumb takes
+   * the paired system colour so it stays visible against whichever track it is
+   * sitting on. */
+  @media (forced-colors: active) {
+    .tl-switch__control {
+      border-color: CanvasText;
+    }
+    .tl-switch__thumb {
+      background: CanvasText;
+    }
+    .tl-switch[data-checked] .tl-switch__control {
+      background: Highlight;
+      border-color: Highlight;
+    }
+    .tl-switch[data-checked] .tl-switch__thumb {
+      background: HighlightText;
+    }
+    .tl-switch[data-disabled] .tl-switch__control {
+      border-color: GrayText;
+    }
+    .tl-switch[data-disabled] .tl-switch__thumb {
+      background: GrayText;
+    }
+  }
+}

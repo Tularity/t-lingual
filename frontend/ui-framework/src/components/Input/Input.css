@@ -1,0 +1,225 @@
+@layer tl.components {
+  .tl-input {
+    /* The styling contract: every variant and state below does nothing but
+     * reassign these, so retheming one instance is a handful of properties
+     * rather than a specificity fight. */
+    --_bg: var(--tl-field-bg);
+    --_fg: var(--tl-text);
+    --_border: var(--tl-field-border);
+    --_border-hover: var(--tl-field-border-hover);
+    --_border-focus: var(--tl-accent-border);
+    --_placeholder: var(--tl-text-subtle);
+    --_adornment: var(--tl-text-muted);
+
+    display: flex;
+    align-items: center;
+    gap: var(--_gap);
+
+    inline-size: 100%;
+    min-inline-size: 0;
+    block-size: var(--_h);
+    padding-inline: var(--_px);
+
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-md);
+    /* The whole box behaves like the field, including the padding either side
+     * of the text — the mousedown handler in the component makes that true, and
+     * the caret cursor is what advertises it. */
+    cursor: text;
+
+    transition: var(--tl-transition-control);
+  }
+
+  /* -- Size ---------------------------------------------------------------- */
+  .tl-input[data-size='sm'] { --_h: 30px; --_px: var(--tl-space-5); --_fs: var(--tl-text-sm); --_gap: var(--tl-space-3); }
+  .tl-input[data-size='md'] { --_h: 36px; --_px: var(--tl-space-6); --_fs: var(--tl-text-sm); --_gap: var(--tl-space-3); }
+  .tl-input[data-size='lg'] { --_h: 44px; --_px: var(--tl-space-8); --_fs: var(--tl-text-md); --_gap: var(--tl-space-4); }
+
+  /* -- Variants ------------------------------------------------------------ */
+  .tl-input[data-variant='subtle'] {
+    --_bg: var(--tl-surface-sunken);
+    --_border: transparent;
+    --_border-hover: var(--tl-border);
+  }
+
+  .tl-input[data-variant='ghost'] {
+    --_bg: transparent;
+    --_border: transparent;
+    --_border-hover: var(--tl-border);
+  }
+
+  /* -- States -------------------------------------------------------------- */
+  .tl-input:hover:not([data-disabled]) {
+    border-color: var(--_border-hover);
+  }
+
+  /* `:focus-within` rather than `:focus-visible` for the border, because a text
+   * field that does not visibly react to a mouse click reads as broken. The
+   * ring below is the part that stays keyboard-only. */
+  .tl-input:focus-within:not([data-disabled]) {
+    border-color: var(--_border-focus);
+  }
+
+  /* The framework's shared ring, moved onto the box. The control itself opts
+   * out with `data-focus-ring="none"`, so this is the only ring drawn; `:has`
+   * is what lets the wrapper react to the child's `:focus-visible`. */
+  .tl-input:has(> .tl-input__control:focus-visible) {
+    outline: var(--tl-focus-width) solid var(--tl-focus-ring);
+    outline-offset: var(--tl-focus-offset);
+  }
+
+  .tl-input[data-invalid] {
+    --_border: var(--tl-danger-border);
+    --_border-hover: var(--tl-danger-fg);
+    --_border-focus: var(--tl-danger-fg);
+  }
+
+  .tl-input[data-disabled] {
+    --_bg: var(--tl-surface-disabled);
+    --_fg: var(--tl-text-disabled);
+    --_border: transparent;
+    --_adornment: var(--tl-text-disabled);
+    cursor: not-allowed;
+  }
+
+  .tl-input[data-readonly] {
+    --_bg: var(--tl-surface-sunken);
+  }
+
+  /* -- Control ------------------------------------------------------------- */
+  .tl-input__control {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-size: var(--_fs);
+    line-height: var(--tl-leading-none);
+    text-overflow: ellipsis;
+  }
+
+  .tl-input__control::placeholder {
+    color: var(--_placeholder);
+    /* Firefox ships a 0.54 opacity on placeholders, which drops the token below
+     * the contrast it was chosen for. */
+    opacity: 1;
+  }
+
+  .tl-input__control:disabled {
+    /* Safari on iOS greys disabled input text on its own and ignores `color`. */
+    -webkit-text-fill-color: var(--tl-text-disabled);
+    opacity: 1;
+    cursor: not-allowed;
+  }
+
+  /* Chrome paints its own opaque yellow behind an autofilled field and there is
+   * no property that turns it off — an inset shadow the size of the field is
+   * the only way to put the themed surface back, and the fill-colour is the
+   * matching half for the text. Without this, every autofilled field in the
+   * dark theme is a bright yellow slab. */
+  .tl-input__control:-webkit-autofill,
+  .tl-input__control:-webkit-autofill:hover,
+  .tl-input__control:-webkit-autofill:focus {
+    box-shadow: inset 0 0 0 100px var(--_bg);
+    -webkit-text-fill-color: var(--_fg);
+    caret-color: var(--_fg);
+  }
+
+  /* WebKit renders a proprietary cancel button inside `type="search"`. It is
+   * unstyleable, appears on hover only, and duplicates the clear button this
+   * component already provides with a real accessible name. */
+  .tl-input__control[type='search']::-webkit-search-cancel-button,
+  .tl-input__control[type='search']::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* -- Adornments ---------------------------------------------------------- */
+  .tl-input__adornment {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    color: var(--_adornment);
+    font-size: var(--_fs);
+    line-height: var(--tl-leading-none);
+    white-space: nowrap;
+    /* A decorative adornment must not intercept the click that focuses the
+     * field — the click has to land on the wrapper for its handler to see it.
+     * Removing this makes the icon a dead zone. */
+    pointer-events: none;
+  }
+
+  .tl-input__adornment[data-interactive] {
+    color: var(--tl-text-secondary);
+    pointer-events: auto;
+  }
+
+  .tl-input__adornment .tl-icon {
+    font-size: 1.15em;
+  }
+
+  /* -- Clear --------------------------------------------------------------- */
+  .tl-input__clear {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    inline-size: 18px;
+    block-size: 18px;
+    /* Pulls the button toward the edge so its optical gap matches the text
+     * inset rather than the sum of the gap and the padding. */
+    margin-inline-end: calc(var(--tl-space-2) * -1);
+    color: var(--tl-text-muted);
+    border-radius: var(--tl-radius-round);
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-input__clear:hover {
+    color: var(--tl-text);
+    background: var(--tl-surface-active);
+  }
+
+  /* WCAG 2.2 SC 2.5.8 asks for 24x24 of pointer target. The button is drawn at
+   * 18 to sit inside a 30px field, so the target grows transparently instead of
+   * the button getting bigger. */
+  .tl-input__clear::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+  }
+
+  .tl-input__clear .tl-icon {
+    inline-size: 12px;
+    block-size: 12px;
+  }
+
+  /* Forced colors strips `background-color` and `border-color` values, so the
+   * field's outline has to be re-stated in system colours or the box vanishes
+   * into the page. */
+  @media (forced-colors: active) {
+    .tl-input {
+      border-color: CanvasText;
+    }
+    .tl-input[data-disabled] {
+      border-color: GrayText;
+    }
+    .tl-input:focus-within {
+      border-color: Highlight;
+    }
+    /* Invalid is carried entirely by border COLOUR, and every colour in this
+     * mode is replaced by a system one — so a field in error would look exactly
+     * like a valid one. Border STYLE is not overridden, which is what makes a
+     * dash the reliable carrier here. Width is left alone deliberately: growing
+     * the border reflows the control the moment validation fires. */
+    .tl-input[data-invalid] {
+      border-style: dashed;
+    }
+  }
+}

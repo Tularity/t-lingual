@@ -16,6 +16,8 @@ import (
 type fakeAdminClient struct {
 	status               control.StatusResponse
 	created              control.CreateInvitationResponse
+	createdCode          control.CreateCodeResponse
+	codeRequest          control.CreateCodeRequest
 	invitations          control.InvitationListResponse
 	users                control.UserListResponse
 	err                  error
@@ -35,6 +37,11 @@ func (f *fakeAdminClient) Status(context.Context) (control.StatusResponse, error
 func (f *fakeAdminClient) CreateInvitation(_ context.Context, ttl time.Duration) (control.CreateInvitationResponse, error) {
 	f.createdTTL = ttl
 	return f.created, f.err
+}
+
+func (f *fakeAdminClient) CreateCode(_ context.Context, input control.CreateCodeRequest) (control.CreateCodeResponse, error) {
+	f.codeRequest = input
+	return f.createdCode, f.err
 }
 
 func (f *fakeAdminClient) ListInvitations(context.Context, int, int) (control.InvitationListResponse, error) {
@@ -97,6 +104,40 @@ func TestInviteCreateShowsClearCodeExactlyOnce(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "inv_test") || stderr.Len() != 0 || !fake.closedIdleConnection {
 		t.Fatalf("stdout=%q stderr=%q closed=%v", stdout.String(), stderr.String(), fake.closedIdleConnection)
+	}
+}
+
+func TestCodeCreateCLIUsesRunningSocketAndPrintsOnlyOneClearCode(t *testing.T) {
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	fake := &fakeAdminClient{createdCode: control.CreateCodeResponse{
+		Invitation: domain.Invitation{ID: "inv_recover", Kind: "login", TargetUserID: "usr_target",
+			NotBefore: now, ExpiresAt: now.Add(10 * time.Minute)}, Code: "654321",
+	}}
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"code", "create", "--kind", "login", "--user", "usr_target",
+		"--not-before", now.Format(time.RFC3339), "--ttl", "10m"}, testLookup(nil),
+		&stdout, &stderr, func(string) (adminClient, error) { return fake, nil })
+	if exit != exitSuccess || fake.codeRequest.Kind != "login" || fake.codeRequest.TargetUserID != "usr_target" ||
+		fake.codeRequest.NotBefore != now.Format(time.RFC3339) || fake.codeRequest.TTL != "10m0s" ||
+		strings.Count(stdout.String(), "654321") != 1 || stderr.Len() != 0 {
+		t.Fatalf("code CLI exit=%d request=%#v output=%q err=%q", exit, fake.codeRequest, stdout.String(), stderr.String())
+	}
+}
+
+func TestCodeCreateCLIRejectsUnsafeTargetOrConflictingExpiryBeforeSocket(t *testing.T) {
+	for _, args := range [][]string{
+		{"code", "create", "--kind", "login"},
+		{"code", "create", "--kind", "registration", "--user", "usr_target"},
+		{"code", "create", "--kind", "login", "--user", "usr_target", "--ttl", "10m", "--expires-at", "2026-10-01T09:00:00Z"},
+		{"code", "create", "--kind", "login", "--user", "usr_target", "--not-before", "tomorrow"},
+	} {
+		called := false
+		var stdout, stderr bytes.Buffer
+		exit := run(args, testLookup(nil), &stdout, &stderr,
+			func(string) (adminClient, error) { called = true; return &fakeAdminClient{}, nil })
+		if exit != exitUsage || called {
+			t.Fatalf("unsafe arguments %#v exit=%d called=%v", args, exit, called)
+		}
 	}
 }
 

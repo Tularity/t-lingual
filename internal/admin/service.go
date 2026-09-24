@@ -144,8 +144,10 @@ func (s *Service) createInvitation(
 		}
 		invitation := domain.Invitation{
 			ID:        invitationID,
+			Kind:      "registration",
 			CreatedBy: authority.actorPointer(),
 			CreatedAt: now,
+			NotBefore: now,
 			ExpiresAt: now.Add(ttl),
 		}
 		audit, err := s.newAuditEvent(

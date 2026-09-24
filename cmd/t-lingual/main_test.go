@@ -14,6 +14,13 @@ import (
 )
 
 func TestOptionalUserRevokersAreNilSafe(t *testing.T) {
+	if handler := optionalLiveHandler(nil); handler != nil {
+		t.Fatal("unconfigured ASR produced a non-nil live API handler")
+	}
+	manager := &live.Manager{}
+	if handler := optionalLiveHandler(manager); handler != manager {
+		t.Fatal("configured ASR did not preserve its live API handler")
+	}
 	if callback := optionalControlUserRevoker(nil); callback != nil {
 		t.Fatal("nil live manager produced a control callback")
 	}

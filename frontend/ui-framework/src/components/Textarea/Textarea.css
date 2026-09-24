@@ -1,0 +1,182 @@
+@layer tl.components {
+  .tl-textarea {
+    --_bg: var(--tl-field-bg);
+    --_fg: var(--tl-text);
+    --_border: var(--tl-field-border);
+    --_border-hover: var(--tl-field-border-hover);
+    --_border-focus: var(--tl-accent-border);
+    --_placeholder: var(--tl-text-subtle);
+    --_leading: var(--tl-leading-normal);
+
+    display: block;
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding: var(--_py) var(--_px);
+
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-md);
+
+    transition: var(--tl-transition-control);
+  }
+
+  /* -- Size ---------------------------------------------------------------- */
+  .tl-textarea[data-size='sm'] { --_py: var(--tl-space-4); --_px: var(--tl-space-5); --_fs: var(--tl-text-sm); }
+  .tl-textarea[data-size='md'] { --_py: var(--tl-space-5); --_px: var(--tl-space-6); --_fs: var(--tl-text-sm); }
+  .tl-textarea[data-size='lg'] { --_py: var(--tl-space-6); --_px: var(--tl-space-8); --_fs: var(--tl-text-md); }
+
+  /* -- Variants ------------------------------------------------------------ */
+  .tl-textarea[data-variant='subtle'] {
+    --_bg: var(--tl-surface-sunken);
+    --_border: transparent;
+    --_border-hover: var(--tl-border);
+  }
+
+  .tl-textarea[data-variant='ghost'] {
+    --_bg: transparent;
+    --_border: transparent;
+    --_border-hover: var(--tl-border);
+  }
+
+  /* -- States -------------------------------------------------------------- */
+  .tl-textarea:hover:not([data-disabled]) {
+    border-color: var(--_border-hover);
+  }
+
+  .tl-textarea:focus-within:not([data-disabled]) {
+    border-color: var(--_border-focus);
+  }
+
+  /* The ring is drawn on the box so it wraps the padding; the control opts out
+   * of the framework's automatic ring with `data-focus-ring="none"`. */
+  .tl-textarea:has(.tl-textarea__control:focus-visible) {
+    outline: var(--tl-focus-width) solid var(--tl-focus-ring);
+    outline-offset: var(--tl-focus-offset);
+  }
+
+  .tl-textarea[data-invalid] {
+    --_border: var(--tl-danger-border);
+    --_border-hover: var(--tl-danger-fg);
+    --_border-focus: var(--tl-danger-fg);
+  }
+
+  .tl-textarea[data-disabled] {
+    --_bg: var(--tl-surface-disabled);
+    --_fg: var(--tl-text-disabled);
+    --_border: transparent;
+    cursor: not-allowed;
+  }
+
+  .tl-textarea[data-readonly] {
+    --_bg: var(--tl-surface-sunken);
+  }
+
+  /* -- Sizer ----------------------------------------------------------------
+   * All the box decoration lives on the wrapper and none of it on the control,
+   * which is what makes the replication exact: the pseudo-element and the
+   * textarea share a font, a line-height and a zero-sized box, so they cannot
+   * disagree about where a line wraps. */
+  .tl-textarea__sizer {
+    display: block;
+    min-inline-size: 0;
+    font-size: var(--_fs);
+    line-height: var(--_leading);
+  }
+
+  .tl-textarea[data-auto-resize] .tl-textarea__sizer {
+    display: grid;
+  }
+
+  .tl-textarea[data-auto-resize] .tl-textarea__sizer::after {
+    content: attr(data-replicated-value) ' ';
+    /* `pre-wrap` is what a textarea uses internally; anything else and the
+     * mirror wraps at different points from the text it is measuring. */
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    visibility: hidden;
+  }
+
+  .tl-textarea[data-auto-resize] .tl-textarea__sizer > .tl-textarea__control,
+  .tl-textarea[data-auto-resize] .tl-textarea__sizer::after {
+    /* Both occupy the same cell, so the row is as tall as the taller of the
+     * two — which is always the mirror, since it has no scroll container. */
+    grid-area: 1 / 1 / 2 / 2;
+  }
+
+  /* The ceiling has to be stated twice, and both statements are load-bearing.
+   *
+   * On the sizer it caps the visible box and clips the mirror, which is still
+   * as tall as the whole value. On the control it is what makes the control the
+   * scroll container: a grid item stretches to its *row*, and the row is sized
+   * from the mirror's content, not from the container's clamped height. Cap the
+   * sizer alone and the textarea stays exactly as tall as its text — nothing to
+   * scroll — while everything past the ceiling is clipped out of reach, since
+   * the sizer's own `overflow` is `hidden` and cannot be scrolled either.
+   *
+   * `--_ceiling` is declared here rather than on the block so the `1em` resolves
+   * against the sizer's font size, which is the one the control inherits. */
+  .tl-textarea[data-clamped] .tl-textarea__sizer {
+    --_ceiling: calc(var(--_max-rows, 8) * var(--_leading) * 1em);
+    max-block-size: var(--_ceiling);
+    overflow: hidden;
+  }
+
+  .tl-textarea[data-clamped] .tl-textarea__control {
+    max-block-size: var(--_ceiling);
+  }
+
+  /* -- Control ------------------------------------------------------------- */
+  .tl-textarea__control {
+    display: block;
+    inline-size: 100%;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .tl-textarea[data-resize='none'] .tl-textarea__control { resize: none; }
+  .tl-textarea[data-resize='vertical'] .tl-textarea__control { resize: vertical; }
+  .tl-textarea[data-resize='both'] .tl-textarea__control { resize: both; }
+
+  /* Without a ceiling the control is exactly as tall as its text, so a
+   * scrollbar could only ever be a rounding artefact. */
+  .tl-textarea[data-auto-resize] .tl-textarea__control { overflow-y: hidden; }
+  .tl-textarea[data-clamped] .tl-textarea__control { overflow-y: auto; }
+
+  .tl-textarea__control::placeholder {
+    color: var(--_placeholder);
+    /* Firefox ships a 0.54 opacity on placeholders, which drops the token below
+     * the contrast it was chosen for. */
+    opacity: 1;
+  }
+
+  .tl-textarea__control:disabled {
+    /* Safari on iOS greys disabled control text on its own and ignores `color`. */
+    -webkit-text-fill-color: var(--tl-text-disabled);
+    opacity: 1;
+    cursor: not-allowed;
+  }
+
+  @media (forced-colors: active) {
+    .tl-textarea {
+      border-color: CanvasText;
+    }
+    .tl-textarea[data-disabled] {
+      border-color: GrayText;
+    }
+    .tl-textarea:focus-within {
+      border-color: Highlight;
+    }
+    /* See Input: the invalid state rides on border colour, which this mode
+     * replaces, so the dash is what survives to carry it. */
+    .tl-textarea[data-invalid] {
+      border-style: dashed;
+    }
+  }
+}

@@ -139,6 +139,11 @@ func (s *Store) UpdateUserRole(ctx context.Context, userID string, role domain.R
 	if err := requireAffected(result, err, "update user role"); err != nil {
 		return err
 	}
+	if currentRole != role {
+		if err := revokeOutstandingLoginCodesTx(ctx, tx, userID, updatedAt); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store: commit user role update: %w", err)
 	}
@@ -170,6 +175,11 @@ func (s *Store) UpdateUserStatus(ctx context.Context, userID string, status doma
 	)
 	if err := requireAffected(result, err, "update user status"); err != nil {
 		return err
+	}
+	if currentStatus != status {
+		if err := revokeOutstandingLoginCodesTx(ctx, tx, userID, updatedAt); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store: commit user status update: %w", err)

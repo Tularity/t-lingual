@@ -1,55 +1,10 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { readBrowserStorage, writeBrowserStorage } from '../platform/storage'
-
+import { useEffect, type ReactNode } from 'react'
+import { ThemeProvider as Provider, useTheme as useUITheme } from '@t-lingual/ui'
 export type ThemeMode = 'system' | 'light' | 'dark'
-
-interface ThemeContextValue {
-  mode: ThemeMode
-  resolved: 'light' | 'dark'
-  setMode: (mode: ThemeMode) => void
+function ThemeChrome() {
+  const { theme } = useUITheme()
+  useEffect(() => { document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#17130f' : '#f7f2e8') }, [theme])
+  return null
 }
-
-const ThemeContext = createContext<ThemeContextValue | null>(null)
-const STORAGE_KEY = 't-lingual.theme'
-
-function systemTheme(): 'light' | 'dark' {
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>(() => {
-    const saved = readBrowserStorage('local', STORAGE_KEY)
-    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system'
-  })
-  const [system, setSystem] = useState(systemTheme)
-  const resolved = mode === 'system' ? system : mode
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const update = () => setSystem(media.matches ? 'dark' : 'light')
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = resolved
-    document.querySelector('meta[name="theme-color"]')?.setAttribute(
-      'content',
-      resolved === 'dark' ? '#17130f' : '#f7f2e8',
-    )
-  }, [resolved])
-
-  const setMode = (next: ThemeMode) => {
-    writeBrowserStorage('local', STORAGE_KEY, next)
-    setModeState(next)
-  }
-
-  const value = useMemo(() => ({ mode, resolved, setMode }), [mode, resolved])
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-}
-
-export function useTheme() {
-  const context = useContext(ThemeContext)
-  if (!context) throw new Error('useTheme must be used within ThemeProvider')
-  return context
-}
+export function ThemeProvider({ children }: { children: ReactNode }) { return <Provider storageKey={null}><ThemeChrome />{children}</Provider> }
+export function useTheme() { const { preference, theme, system, setPreference } = useUITheme(); return { mode: preference, resolved: theme, system, setMode: setPreference } }

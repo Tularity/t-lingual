@@ -28,14 +28,6 @@ body {
 }
 
 button,
-input,
-select,
-textarea {
-  color: inherit;
-  font: inherit;
-}
-
-button,
 select {
   cursor: pointer;
 }
@@ -45,7 +37,7 @@ select:disabled {
   cursor: not-allowed;
 }
 
-a {
+a:not([data-tl]):not(.tl-button) {
   color: inherit;
   text-decoration: none;
 }
@@ -60,7 +52,7 @@ svg {
   background: color-mix(in srgb, var(--color-accent) 66%, white);
 }
 
-:focus-visible {
+:focus-visible:not([data-tl]) {
   outline: 3px solid color-mix(in srgb, var(--color-focus) 72%, transparent);
   outline-offset: 2px;
 }
@@ -94,13 +86,8 @@ svg {
   transform: translateY(0);
 }
 
+/* The framework owns reduced-motion behavior for its primitives. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-  }
+  html { scroll-behavior: auto; }
+  .app-boot__wave i, .auth-signal span { animation: none; }
 }

@@ -1,0 +1,163 @@
+@layer tl.components {
+  .tl-error-state {
+    --_pad: var(--tl-space-14);
+    --_icon-size: 40px;
+    --_title-size: var(--tl-text-lg);
+    --_gap: var(--tl-space-4);
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--_gap);
+
+    padding: var(--_pad) var(--tl-space-8);
+    text-align: center;
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-error-state[data-size='sm'] {
+    --_pad: var(--tl-space-9);
+    --_icon-size: 28px;
+    --_title-size: var(--tl-text-md);
+    --_gap: var(--tl-space-3);
+  }
+
+  .tl-error-state[data-size='lg'] {
+    --_pad: var(--tl-space-24);
+    --_icon-size: 56px;
+    --_title-size: var(--tl-text-xl);
+    --_gap: var(--tl-space-5);
+  }
+
+  .tl-error-state__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: calc(var(--_icon-size) * 1.8);
+    height: calc(var(--_icon-size) * 1.8);
+    margin-block-end: var(--tl-space-2);
+
+    font-size: var(--_icon-size);
+    /* The status colour appears on the glyph and its disc only. Setting the
+     * title in red as well would make a recoverable network hiccup look like
+     * data loss; the words are what should carry the severity. */
+    color: var(--tl-danger-fg);
+    background: var(--tl-danger-bg);
+    border-radius: var(--tl-radius-round);
+  }
+
+  .tl-error-state__title {
+    margin: 0;
+    font-size: var(--_title-size);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-snug);
+    letter-spacing: var(--tl-tracking-tight);
+    color: var(--tl-text);
+  }
+
+  .tl-error-state__description {
+    max-width: 56ch;
+    margin: 0;
+    font-size: var(--tl-text-md);
+    line-height: var(--tl-leading-normal);
+    text-wrap: pretty;
+  }
+
+  .tl-error-state__actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--tl-space-4);
+    margin-block-start: var(--tl-space-3);
+  }
+
+  /* -- Technical detail ---------------------------------------------------- */
+  .tl-error-state__detail {
+    width: 100%;
+    max-width: 46rem;
+    margin-block-start: var(--tl-space-4);
+    text-align: start;
+  }
+
+  .tl-error-state__summary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tl-space-2);
+
+    /* The UA triangle is replaced by a glyph that can be sized and coloured
+     * with the rest of the framework; `list-style` covers Firefox and the
+     * `::-webkit-details-marker` rule below covers older WebKit. */
+    list-style: none;
+    padding: var(--tl-space-2) var(--tl-space-4);
+    margin-inline-start: calc(var(--tl-space-4) * -1);
+
+    font-size: var(--tl-text-sm);
+    font-weight: var(--tl-weight-medium);
+    color: var(--tl-text-secondary);
+    border-radius: var(--tl-radius-sm);
+    cursor: pointer;
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-error-state__summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tl-error-state__summary:hover {
+    color: var(--tl-text);
+    background: var(--tl-surface-hover);
+  }
+
+  .tl-error-state__caret {
+    display: inline-flex;
+    font-size: 1.05em;
+    /* Movement, so the signature curve — the same gesture as Panel's chevron,
+     * and it should feel like the same gesture. */
+    transition: rotate var(--tl-duration-sm) var(--tl-ease-signature);
+  }
+
+  .tl-error-state__detail[open] .tl-error-state__caret {
+    rotate: 90deg;
+  }
+
+  .tl-error-state__detail-body {
+    margin: var(--tl-space-2) 0 0;
+    padding: var(--tl-space-6);
+    max-height: 16rem;
+    overflow: auto;
+
+    font-family: var(--tl-font-mono);
+    font-size: var(--tl-text-xs);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text-secondary);
+    background: var(--tl-code-bg);
+    border-radius: var(--tl-radius-sm);
+
+    /* Both declarations matter. `pre-wrap` keeps a long stack from forcing a
+     * horizontal scrollbar across the whole card, and `anywhere` breaks the
+     * unbroken 200-character URLs and tokens that appear in exactly this kind
+     * of diagnostic. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+
+    /* Stated explicitly rather than relied on. An ancestor that set
+     * `user-select: none` — a drag handle, a resizable pane, a table with
+     * shift-click selection — would otherwise make the one piece of text on the
+     * screen that exists to be copied impossible to select. */
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  @media (forced-colors: active) {
+    .tl-error-state__icon {
+      border: 1px solid CanvasText;
+      color: CanvasText;
+    }
+
+    .tl-error-state__detail-body {
+      border: 1px solid CanvasText;
+    }
+  }
+}

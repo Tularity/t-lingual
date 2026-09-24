@@ -1,0 +1,313 @@
+@layer tl.components {
+  .tl-drawer {
+    /* Defaults live on the root because the drag writes `--_drag` and
+     * `--_progress` to this element's inline style, and an inline declaration
+     * beats a stylesheet one on the same element. Declaring the fallbacks on
+     * the panel instead would shadow the inherited value and the panel would
+     * never move. */
+    --_drag: 0px;
+    --_progress: 0;
+    --_w: 420px;
+    --_h: 52dvh;
+    --_gutter: var(--tl-space-12);
+
+    position: fixed;
+    inset: 0;
+    z-index: var(--tl-z-drawer);
+  }
+
+  /* On its way out the overlay must stop intercepting the pointer at once, or
+   * it spends the whole exit swallowing clicks aimed at the page it uncovers. */
+  .tl-drawer[data-state='exiting'] {
+    pointer-events: none;
+  }
+
+  /* -- Scrim -----------------------------------------------------------------
+   * The scrim tracks the finger: pulling the panel halfway off screen halves
+   * the scrim, so the gesture reads as reversible rather than as a switch that
+   * has already been thrown. Its fade uses the overlay pair, whose opacity leg
+   * is deliberately shorter than the panel's transform leg. */
+  .tl-drawer__scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--tl-scrim);
+    opacity: calc(1 - var(--_progress));
+    transition: var(--tl-transition-overlay-enter);
+  }
+
+  @starting-style {
+    .tl-drawer__scrim[data-state='entering'] {
+      opacity: 0;
+    }
+  }
+
+  .tl-drawer__scrim[data-state='exiting'] {
+    opacity: 0;
+    transition: var(--tl-transition-overlay-exit);
+  }
+
+  /* -- Panel ------------------------------------------------------------------ */
+  .tl-drawer__panel {
+    /* Entrance travel, one axis per side, resolved by the [data-side] rules
+     * below. The 100% is multiplied by --tl-motion-distance, so reduced motion
+     * removes the slide entirely and leaves the fade — which is precisely what
+     * that preference asks for. */
+    --_from-x: 0;
+    --_from-y: 0;
+
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    background: var(--tl-surface-elevated);
+    color: var(--tl-text);
+    border: 1px solid var(--tl-overlay-border);
+    box-shadow: var(--tl-elevation-lg);
+
+    opacity: 1;
+    /* `transform` carries the entrance and exit; `translate` (set per side
+     * below) carries the live drag offset. The two compose, so a swipe that
+     * turns into a dismissal continues from where the finger left the panel
+     * instead of snapping back to the resting position first. Letting go short
+     * of the threshold springs the drag back on the settle curve, whose visible
+     * rebound is what makes the release read as a release. */
+    transform: translate(0, 0);
+    transition:
+      var(--tl-transition-overlay-enter),
+      translate var(--tl-duration-settle) var(--tl-ease-settle);
+  }
+
+  @starting-style {
+    .tl-drawer__panel[data-state='entering'] {
+      opacity: 0;
+      transform: translate(var(--_from-x), var(--_from-y));
+    }
+  }
+
+  /* Exit mirrors the entrance, back toward the edge it came from. Focus has
+   * already been returned to the opener; only the pointer is left to neutralise.
+   * The `translate` leg is restated because a transition list replaces rather
+   * than extends: without it, a close that lands during the springback after a
+   * short swipe cancels the settle and the panel snaps to rest before it
+   * slides out. At 420ms it is shorter than the transform leg, so it never
+   * lengthens the exit. */
+  .tl-drawer__panel[data-state='exiting'] {
+    opacity: 0;
+    transform: translate(var(--_from-x), var(--_from-y));
+    transition:
+      var(--tl-transition-overlay-exit),
+      translate var(--tl-duration-settle) var(--tl-ease-settle);
+    pointer-events: none;
+  }
+
+  /* Focus lands on the sheet on open so its name is announced; it is not an
+   * operable control, so it does not take a ring of its own. */
+  .tl-drawer__panel:focus-visible {
+    outline: none;
+  }
+
+  /* Mid-drag the panel must track the finger exactly. Any transition here turns
+   * a direct-manipulation gesture into a laggy animation of one. */
+  .tl-drawer[data-dragging] .tl-drawer__panel,
+  .tl-drawer[data-dragging] .tl-drawer__scrim {
+    transition: none;
+  }
+
+  /* -- Sides ------------------------------------------------------------------ */
+  .tl-drawer[data-side='left'] .tl-drawer__panel,
+  .tl-drawer[data-side='right'] .tl-drawer__panel {
+    top: 0;
+    bottom: 0;
+    width: min(var(--_w), calc(100% - var(--_gutter)));
+  }
+
+  .tl-drawer[data-side='top'] .tl-drawer__panel,
+  .tl-drawer[data-side='bottom'] .tl-drawer__panel {
+    left: 0;
+    right: 0;
+    height: min(var(--_h), calc(100% - var(--_gutter)));
+  }
+
+  .tl-drawer[data-side='right'] .tl-drawer__panel {
+    --_from-x: calc(100% * var(--tl-motion-distance));
+    right: 0;
+    border-radius: var(--tl-radius-lg) 0 0 var(--tl-radius-lg);
+    border-right: 0;
+    translate: var(--_drag) 0;
+  }
+
+  .tl-drawer[data-side='left'] .tl-drawer__panel {
+    --_from-x: calc(-100% * var(--tl-motion-distance));
+    left: 0;
+    border-radius: 0 var(--tl-radius-lg) var(--tl-radius-lg) 0;
+    border-left: 0;
+    translate: calc(-1 * var(--_drag)) 0;
+  }
+
+  .tl-drawer[data-side='bottom'] .tl-drawer__panel {
+    --_from-y: calc(100% * var(--tl-motion-distance));
+    bottom: 0;
+    border-radius: var(--tl-radius-xl) var(--tl-radius-xl) 0 0;
+    border-bottom: 0;
+    translate: 0 var(--_drag);
+  }
+
+  .tl-drawer[data-side='top'] .tl-drawer__panel {
+    --_from-y: calc(-100% * var(--tl-motion-distance));
+    top: 0;
+    border-radius: 0 0 var(--tl-radius-xl) var(--tl-radius-xl);
+    border-top: 0;
+    translate: 0 calc(-1 * var(--_drag));
+  }
+
+  /* -- Size ------------------------------------------------------------------ */
+  .tl-drawer[data-size='sm'] { --_w: 320px; --_h: 34dvh; }
+  .tl-drawer[data-size='md'] { --_w: 420px; --_h: 52dvh; }
+  .tl-drawer[data-size='lg'] { --_w: 660px; --_h: 78dvh; }
+  .tl-drawer[data-size='full'] { --_w: 100%; --_h: 100%; --_gutter: 0px; }
+  .tl-drawer[data-size='full'] .tl-drawer__panel { border-radius: 0; }
+
+  /* -- Swipe ------------------------------------------------------------------ */
+  /* Declaring `pan-y` hands vertical scrolling back to the browser, which then
+   * arbitrates the gesture for us and fires pointercancel the moment it decides
+   * the user was scrolling rather than dragging. Top and bottom drawers cannot
+   * use the mirror of this — `pan-x` would make their contents unscrollable —
+   * so they drag from the grab handle only.
+   *
+   * The body is listed as well as the panel because touch-action resolution
+   * walks up from the touched element and stops at the nearest scroll
+   * container. The body is one (`overflow-y: auto`), so a finger landing on it
+   * would otherwise resolve to `auto`, the browser would claim the horizontal
+   * pan, and the swipe would be cancelled everywhere but the header and
+   * footer. Any scroll container a consumer nests inside a left or right
+   * drawer needs `pan-y` of its own for the same reason. */
+  .tl-drawer[data-swipe][data-side='left'] .tl-drawer__panel,
+  .tl-drawer[data-swipe][data-side='right'] .tl-drawer__panel,
+  .tl-drawer[data-swipe][data-side='left'] .tl-drawer__body,
+  .tl-drawer[data-swipe][data-side='right'] .tl-drawer__body {
+    touch-action: pan-y;
+  }
+
+  .tl-drawer__grabber {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    padding-block: var(--tl-space-4);
+    touch-action: none;
+    /* Not `grab`. A cursor is only ever drawn for a mouse, and the mouse is the
+     * one pointer type this gesture refuses — so a grab cursor here advertises
+     * a drag that will not happen to the only user who can see it. */
+    cursor: default;
+  }
+
+  .tl-drawer[data-side='top'] .tl-drawer__grabber {
+    order: 1;
+  }
+
+  .tl-drawer__grabber-bar {
+    width: 40px;
+    height: 4px;
+    border-radius: var(--tl-radius-round);
+    background: var(--tl-border-strong);
+  }
+
+  /* -- Content ---------------------------------------------------------------- */
+  .tl-drawer__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-6);
+    flex: none;
+    padding: var(--tl-space-9) var(--tl-space-9) var(--tl-space-6);
+  }
+
+  .tl-drawer__heading {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-2);
+  }
+
+  .tl-drawer__title {
+    margin: 0;
+    font-size: var(--tl-text-lg);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-tight);
+    letter-spacing: var(--tl-tracking-tight);
+    color: var(--tl-text);
+  }
+
+  .tl-drawer__description {
+    margin: 0;
+    font-size: var(--tl-text-sm);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-drawer__close {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: -2px -4px 0 0;
+    padding: 0;
+    color: var(--tl-text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--tl-radius-sm);
+    cursor: pointer;
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-drawer__close:hover {
+    color: var(--tl-text);
+    background: var(--tl-surface-hover);
+  }
+
+  .tl-drawer__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 var(--tl-space-9);
+    font-size: var(--tl-text-md);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text-secondary);
+    scrollbar-width: thin;
+    scrollbar-color: var(--tl-border-strong) transparent;
+  }
+
+  .tl-drawer__body:first-child { padding-top: var(--tl-space-9); }
+  .tl-drawer__body:last-child { padding-bottom: var(--tl-space-9); }
+
+  .tl-drawer__footer {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--tl-space-4);
+    padding: var(--tl-space-8) var(--tl-space-9) var(--tl-space-9);
+    border-top: 1px solid var(--tl-divider);
+  }
+
+  /* Fills and shadows are discarded by the OS here, so the panel edge has to
+   * exist as a real border and the scrim as a real opaque surface. */
+  @media (forced-colors: active) {
+    .tl-drawer__panel {
+      border: 2px solid CanvasText;
+    }
+    .tl-drawer__scrim {
+      background: Canvas;
+    }
+    .tl-drawer__close {
+      border-color: currentColor;
+    }
+    .tl-drawer__grabber-bar {
+      background: CanvasText;
+    }
+  }
+}

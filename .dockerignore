@@ -48,3 +48,10 @@ weights/
 .vscode/
 **/.DS_Store
 **/Thumbs.db
+
+# The component lab and the framework build output are local artefacts; the
+# image builds the framework from source and never needs Playwright.
+frontend/lab/
+frontend/ui-framework/dist/
+frontend/ui-framework/node_modules/
+frontend/ui-framework/src/**/*.test.*

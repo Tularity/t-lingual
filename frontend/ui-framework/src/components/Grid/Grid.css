@@ -1,0 +1,50 @@
+@layer tl.components {
+  .tl-grid {
+    --_gap: var(--tl-space-4);
+    --_min: 16rem;
+    --_columns: 1;
+
+    display: grid;
+    gap: var(--_gap);
+    min-width: 0;
+  }
+
+  /* `minmax(0, 1fr)` rather than a bare `1fr`. A `1fr` track carries an
+   * automatic minimum of min-content, so a single unbreakable string — a
+   * session id, a long email address — widens its track past its share and
+   * pushes the whole grid wider than its container. The explicit zero floor is
+   * what lets the track shrink and the content ellipsise instead. */
+  .tl-grid[data-columns='fixed'] {
+    grid-template-columns: repeat(var(--_columns), minmax(0, 1fr));
+  }
+
+  .tl-grid[data-columns='auto'] {
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--_min), 100%), 1fr));
+  }
+
+  /* -- Gap ----------------------------------------------------------------- */
+  .tl-grid[data-gap='0']  { --_gap: var(--tl-space-0); }
+  .tl-grid[data-gap='1']  { --_gap: var(--tl-space-1); }
+  .tl-grid[data-gap='2']  { --_gap: var(--tl-space-2); }
+  .tl-grid[data-gap='3']  { --_gap: var(--tl-space-3); }
+  .tl-grid[data-gap='4']  { --_gap: var(--tl-space-4); }
+  .tl-grid[data-gap='5']  { --_gap: var(--tl-space-5); }
+  .tl-grid[data-gap='6']  { --_gap: var(--tl-space-6); }
+  .tl-grid[data-gap='7']  { --_gap: var(--tl-space-7); }
+  .tl-grid[data-gap='8']  { --_gap: var(--tl-space-8); }
+  .tl-grid[data-gap='9']  { --_gap: var(--tl-space-9); }
+  .tl-grid[data-gap='10'] { --_gap: var(--tl-space-10); }
+  .tl-grid[data-gap='11'] { --_gap: var(--tl-space-11); }
+  .tl-grid[data-gap='12'] { --_gap: var(--tl-space-12); }
+  .tl-grid[data-gap='14'] { --_gap: var(--tl-space-14); }
+  .tl-grid[data-gap='16'] { --_gap: var(--tl-space-16); }
+  .tl-grid[data-gap='20'] { --_gap: var(--tl-space-20); }
+  .tl-grid[data-gap='24'] { --_gap: var(--tl-space-24); }
+
+  /* -- Alignment ----------------------------------------------------------- */
+  .tl-grid[data-align='start']    { align-items: start; }
+  .tl-grid[data-align='center']   { align-items: center; }
+  .tl-grid[data-align='end']      { align-items: end; }
+  .tl-grid[data-align='stretch']  { align-items: stretch; }
+  .tl-grid[data-align='baseline'] { align-items: baseline; }
+}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Tularity/t-lingual/internal/domain"
+	"github.com/Tularity/t-lingual/internal/id"
 )
 
 // CreateInvitation stores an opaque keyed digest supplied by the service
@@ -80,6 +81,18 @@ func validateInvitationForCreate(
 	if !invitation.ExpiresAt.After(invitation.CreatedAt) {
 		return errors.New("store: invitation expiry must follow creation")
 	}
+	kind := invitation.Kind
+	if kind == "" {
+		kind = "registration"
+	}
+	notBefore := invitation.NotBefore
+	if notBefore.IsZero() {
+		notBefore = invitation.CreatedAt
+	}
+	if (kind != "registration" && kind != "login") || notBefore.Before(invitation.CreatedAt) || !invitation.ExpiresAt.After(notBefore) ||
+		(kind == "login" && invitation.TargetUserID == "") || (kind == "registration" && invitation.TargetUserID != "") {
+		return errors.New("store: invitation kind, target, or activation window is invalid")
+	}
 	if bucket != nil && (*bucket < 0 || *bucket >= 4096) {
 		return errors.New("store: invitation bucket must be between 0 and 4095")
 	}
@@ -93,6 +106,23 @@ func createInvitationTx(
 	codeDigest []byte,
 	bucket *int64,
 ) error {
+	kind := invitation.Kind
+	if kind == "" {
+		kind = "registration"
+	}
+	notBefore := invitation.NotBefore
+	if notBefore.IsZero() {
+		notBefore = invitation.CreatedAt
+	}
+	if kind == "login" {
+		var status domain.UserStatus
+		if err := tx.QueryRowContext(ctx, `SELECT status FROM users WHERE id = ?`, invitation.TargetUserID).Scan(&status); err != nil {
+			return mapSQLError(err)
+		}
+		if status != domain.UserActive {
+			return ErrForbidden
+		}
+	}
 	if bucket != nil {
 		// A partial UNIQUE index cannot use the wall clock in its predicate.
 		// Retire an expired occupant inside this same write transaction before
@@ -123,10 +153,12 @@ func createInvitationTx(
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO invitations(
 			id, code_hash, created_by, created_at, expires_at, used_at, used_by,
-			revoked_at, failure_bucket, failed_attempts, revocation_reason
-		) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, '')`,
+			revoked_at, failure_bucket, failed_attempts, revocation_reason,
+			kind, target_user_id, not_before
+		) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, '', ?, ?, ?)`,
 		invitation.ID, codeDigest, invitation.CreatedBy,
 		encodeTime(invitation.CreatedAt), encodeTime(invitation.ExpiresAt), bucket,
+		kind, invitation.TargetUserID, encodeTime(notBefore),
 	)
 	if err != nil {
 		return fmt.Errorf("store: create invitation: %w", mapSQLError(err))
@@ -144,7 +176,7 @@ func validateInvitationDigest(codeDigest []byte) error {
 func (s *Store) GetInvitationByID(ctx context.Context, invitationID string) (domain.Invitation, error) {
 	return scanInvitation(s.db.QueryRowContext(ctx, `
 		SELECT id, created_by, created_at, expires_at, used_at, used_by, revoked_at,
-			revocation_reason
+			revocation_reason, kind, target_user_id, not_before
 		FROM invitations WHERE id = ?`, invitationID))
 }
 
@@ -158,12 +190,13 @@ func (s *Store) ValidateInvitation(
 ) (domain.Invitation, error) {
 	invitation, err := scanInvitation(s.db.QueryRowContext(ctx, `
 		SELECT id, created_by, created_at, expires_at, used_at, used_by, revoked_at,
-			revocation_reason
+			revocation_reason, kind, target_user_id, not_before
 		FROM invitations
 		WHERE code_hash = ?
+			AND kind = 'registration'
 			AND used_at IS NULL
 			AND revoked_at IS NULL
-			AND expires_at > ?`, codeDigest[:], encodeTime(now)))
+			AND not_before <= ? AND expires_at > ?`, codeDigest[:], encodeTime(now), encodeTime(now)))
 	if errors.Is(err, ErrNotFound) {
 		return domain.Invitation{}, ErrInvalidInvite
 	}
@@ -184,7 +217,7 @@ func listInvitations(ctx context.Context, queryer rowsQueryer, limit, offset int
 	limit, offset = pagination(limit, offset)
 	rows, err := queryer.QueryContext(ctx, `
 		SELECT id, created_by, created_at, expires_at, used_at, used_by, revoked_at,
-			revocation_reason
+			revocation_reason, kind, target_user_id, not_before
 		FROM invitations ORDER BY created_at DESC, id LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("store: list invitations: %w", err)
@@ -208,17 +241,19 @@ func listInvitations(ctx context.Context, queryer rowsQueryer, limit, offset int
 func scanInvitation(row rowScanner) (domain.Invitation, error) {
 	var invitation domain.Invitation
 	var createdBy, usedBy sql.NullString
-	var createdAt, expiresAt int64
+	var createdAt, expiresAt, notBefore int64
 	var usedAt, revokedAt sql.NullInt64
 	if err := row.Scan(
 		&invitation.ID, &createdBy, &createdAt, &expiresAt,
 		&usedAt, &usedBy, &revokedAt, &invitation.RevocationReason,
+		&invitation.Kind, &invitation.TargetUserID, &notBefore,
 	); err != nil {
 		return domain.Invitation{}, mapSQLError(err)
 	}
 	invitation.CreatedBy = optionalString(createdBy)
 	invitation.CreatedAt = decodeTime(createdAt)
 	invitation.ExpiresAt = decodeTime(expiresAt)
+	invitation.NotBefore = decodeTime(notBefore)
 	invitation.UsedAt = decodeOptionalTime(usedAt)
 	invitation.UsedBy = optionalString(usedBy)
 	invitation.RevokedAt = decodeOptionalTime(revokedAt)
@@ -248,12 +283,13 @@ func (s *Store) ConsumeInvitation(
 		UPDATE invitations
 		SET used_at = ?, used_by = ?
 		WHERE code_hash = ?
+			AND kind = 'registration'
 			AND used_at IS NULL
 			AND revoked_at IS NULL
-			AND expires_at > ?
+			AND not_before <= ? AND expires_at > ?
 		RETURNING id, created_by, created_at, expires_at, used_at, used_by, revoked_at,
-			revocation_reason`,
-		encodeTime(now), usedBy, codeDigest, encodeTime(now),
+			revocation_reason, kind, target_user_id, not_before`,
+		encodeTime(now), usedBy, codeDigest, encodeTime(now), encodeTime(now),
 	))
 	if errors.Is(err, ErrNotFound) {
 		return domain.Invitation{}, ErrInvalidInvite
@@ -380,8 +416,8 @@ func recordInvalidInvitationAttemptTx(
 		WHERE failure_bucket = ?
 			AND used_at IS NULL
 			AND revoked_at IS NULL
-			AND expires_at > ?
-		LIMIT 1`, int64(bucket), encodeTime(now)).Scan(&invitationID, &failures)
+			AND not_before <= ? AND expires_at > ?
+		LIMIT 1`, int64(bucket), encodeTime(now), encodeTime(now)).Scan(&invitationID, &failures)
 	if errors.Is(err, sql.ErrNoRows) {
 		if err := padInvitationFailureTx(ctx, tx, bucket); err != nil {
 			return false, err
@@ -469,6 +505,26 @@ func (s *Store) CompleteRegistration(
 	maxFailures int,
 	auditEventID string,
 ) (domain.Invitation, error) {
+	return s.completeRegistration(ctx, codeDigest, bucket, now, user, credential, maxFailures, auditEventID, nil, "")
+}
+
+// CompleteRegistrationWithSession includes the first authenticated browser
+// session in the same transaction as the new user, passkey, and code use.
+func (s *Store) CompleteRegistrationWithSession(ctx context.Context, codeDigest []byte, bucket uint16,
+	now time.Time, user domain.User, credential domain.Credential, maxFailures int, auditEventID string,
+	session domain.BrowserSession, clearToken string,
+) (domain.Invitation, error) {
+	if session.ID == "" || session.UserID != user.ID || clearToken == "" || session.CreatedAt.IsZero() ||
+		session.LastSeen.IsZero() || !session.ExpiresAt.After(session.CreatedAt) {
+		return domain.Invitation{}, errors.New("store: invalid first registration session")
+	}
+	return s.completeRegistration(ctx, codeDigest, bucket, now, user, credential, maxFailures, auditEventID, &session, clearToken)
+}
+
+func (s *Store) completeRegistration(ctx context.Context, codeDigest []byte, bucket uint16,
+	now time.Time, user domain.User, credential domain.Credential, maxFailures int, auditEventID string,
+	session *domain.BrowserSession, clearToken string,
+) (domain.Invitation, error) {
 	if err := validateRegistration(codeDigest, user, credential); err != nil {
 		return domain.Invitation{}, err
 	}
@@ -484,11 +540,12 @@ func (s *Store) CompleteRegistration(
 
 	var invitationID string
 	var usedAt, revokedAt sql.NullInt64
-	var expiresAt int64
+	var expiresAt, notBefore int64
+	var kind string
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, used_at, revoked_at, expires_at
+		SELECT id, used_at, revoked_at, expires_at, not_before, kind
 		FROM invitations WHERE code_hash = ?`, codeDigest,
-	).Scan(&invitationID, &usedAt, &revokedAt, &expiresAt)
+	).Scan(&invitationID, &usedAt, &revokedAt, &expiresAt, &notBefore, &kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err := recordInvalidInvitationAttemptTx(ctx, tx, bucket, now, maxFailures, auditEventID); err != nil {
 			return domain.Invitation{}, err
@@ -501,7 +558,7 @@ func (s *Store) CompleteRegistration(
 	if err != nil {
 		return domain.Invitation{}, fmt.Errorf("store: inspect registration invitation: %w", err)
 	}
-	if usedAt.Valid || revokedAt.Valid || expiresAt <= encodeTime(now) {
+	if kind != "registration" || usedAt.Valid || revokedAt.Valid || notBefore > encodeTime(now) || expiresAt <= encodeTime(now) {
 		if err := padInvitationFailureTx(ctx, tx, bucket); err != nil {
 			return domain.Invitation{}, err
 		}
@@ -514,6 +571,19 @@ func (s *Store) CompleteRegistration(
 	invitation, err := registerUserWithCredentialTx(ctx, tx, invitationID, codeDigest, now, user, credential)
 	if err != nil {
 		return domain.Invitation{}, err
+	}
+	if session != nil {
+		hash := id.HashSecret(clearToken)
+		result, err := tx.ExecContext(ctx, `INSERT INTO browser_sessions(
+			id,user_id,token_hash,created_at,expires_at,last_seen,user_agent,ip_address
+		) VALUES (?,?,?,?,?,?,?,?)`, session.ID, user.ID, hash[:], encodeTime(session.CreatedAt),
+			encodeTime(session.ExpiresAt), encodeTime(session.LastSeen), session.UserAgent, session.IPAddress)
+		if err != nil {
+			return domain.Invitation{}, fmt.Errorf("store: create first registration session: %w", mapSQLError(err))
+		}
+		if err := requireSingleAffected(result, "create first registration session"); err != nil {
+			return domain.Invitation{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.Invitation{}, fmt.Errorf("store: commit registration completion: %w", err)
@@ -547,9 +617,10 @@ func (s *Store) RegisterUserWithCredential(
 	err = tx.QueryRowContext(ctx, `
 		SELECT id FROM invitations
 		WHERE code_hash = ?
+			AND kind = 'registration'
 			AND used_at IS NULL
 			AND revoked_at IS NULL
-			AND expires_at > ?`, codeDigest, encodeTime(now)).Scan(&invitationID)
+			AND not_before <= ? AND expires_at > ?`, codeDigest, encodeTime(now), encodeTime(now)).Scan(&invitationID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Invitation{}, ErrInvalidInvite
 	}
@@ -620,12 +691,13 @@ func registerUserWithCredentialTx(
 		SET used_at = ?, used_by = ?
 		WHERE id = ?
 			AND code_hash = ?
+			AND kind = 'registration'
 			AND used_at IS NULL
 			AND revoked_at IS NULL
-			AND expires_at > ?
+			AND not_before <= ? AND expires_at > ?
 		RETURNING id, created_by, created_at, expires_at, used_at, used_by, revoked_at,
-			revocation_reason`,
-		encodeTime(now), user.ID, invitationID, codeDigest, encodeTime(now),
+			revocation_reason, kind, target_user_id, not_before`,
+		encodeTime(now), user.ID, invitationID, codeDigest, encodeTime(now), encodeTime(now),
 	))
 	if errors.Is(err, ErrNotFound) {
 		return domain.Invitation{}, ErrInvalidInvite

@@ -1,0 +1,244 @@
+/* ---------------------------------------------------------------------------
+ * THE MARK, AND THE LOADERS BUILT OUT OF IT
+ *
+ * RULES THIS FILE OBEYS
+ * ---------------------
+ * 1. No `stroke-width` and no geometry here. Both are computed per cut in the
+ *    component and written as attributes; a declaration in this file would
+ *    beat the attribute and flatten the optical sizing to one weight.
+ * 2. No `var()` inside a keyframe. A custom property in a keyframe is a
+ *    substitution value, which makes the whole animation discrete — it snaps
+ *    between two values instead of interpolating. Every keyframe below animates
+ *    literals; the per-row variation comes from `animation-delay`, which reads
+ *    `--_line` outside the keyframes where `var()` is fine.
+ * 3. THE LOOPS DO NOT READ --tl-motion-scale. Halving a loop's period doubles
+ *    its rate — strictly more movement from the setting meant to reduce it.
+ *    Under `prefers-reduced-motion: reduce` the loops are simply never
+ *    declared here, so there is nothing to scale and the mark rests as the
+ *    finished logo. The one loop that must keep running — the pulse inside a
+ *    Spinner — is re-declared under the preference by Spinner.css, not by this
+ *    file; see the LOOPS note below. `progress` keeps the scaled duration
+ *    tokens because it is a transition, where the multiplier means what it
+ *    says.
+ * 4. Every framework token read here carries a fallback. A `var()` with no
+ *    fallback whose token is undefined invalidates the whole declaration, and
+ *    on an `svg[fill="none"]` that means the mark renders as nothing at all.
+ *    This file must survive being dropped into a page that has not loaded the
+ *    token layer — a favicon page, a print stylesheet, a storybook.
+ * ------------------------------------------------------------------------- */
+@layer tl.components {
+  .tl-mark {
+    /* Each variant's natural tempo. `--_cycle` from the component overrides
+     * all three, so a caller scales every phase of a loop together. */
+    --_tempo-sweep: var(--_cycle, 2800ms);
+    --_tempo-pulse: var(--_cycle, 1500ms);
+    --_tempo-live: var(--_cycle, 1400ms);
+
+    display: block;
+    flex-shrink: 0;
+  }
+
+  /* THREE INKS. Which piece takes which is decided in markGeometry.ts and
+   * arrives as `data-ink`, because the palette is part of the drawing and has
+   * to be identical on every render; this file only says what each ink is.
+   *
+   * Brand tone: the mark owns its colours — the base amber for the hatch, the
+   * deep amber on every piece the T cut so the letter is outlined a shade
+   * darker, and the brand brown scattered over a few pieces elsewhere. Mono
+   * tone: the same drawing in the base amber alone, for a size or surface
+   * where three inks would only be noise. Inherit tone: `currentColor`, with
+   * the palette kept as three opacities — the T's edge at full strength, the
+   * hatch a step under it, the scatter a step under that — so the letter still
+   * reads first on a single-colour surface. */
+  .tl-mark[data-tone='brand'] {
+    --_ink-1: var(--tl-mark-ink, #f39c12);
+    --_ink-2: var(--tl-mark-ink-deep, #c27400);
+    --_ink-3: var(--tl-mark-ink-accent, #704522);
+    --_alpha-1: 1;
+    --_alpha-2: 1;
+    --_alpha-3: 1;
+  }
+  .tl-mark[data-tone='mono'] {
+    --_ink-1: var(--tl-mark-ink, #f39c12);
+    --_ink-2: var(--tl-mark-ink, #f39c12);
+    --_ink-3: var(--tl-mark-ink, #f39c12);
+    --_alpha-1: 1;
+    --_alpha-2: 1;
+    --_alpha-3: 1;
+  }
+  .tl-mark[data-tone='inherit'] {
+    --_ink-1: currentColor;
+    --_ink-2: currentColor;
+    --_ink-3: currentColor;
+    --_alpha-1: 0.8;
+    --_alpha-2: 1;
+    --_alpha-3: 0.55;
+  }
+
+  .tl-mark__line {
+    fill: none;
+    stroke: var(--_ink-1);
+    stroke-opacity: var(--_alpha-1);
+    stroke-linecap: round;
+  }
+  .tl-mark__line[data-ink='2'] {
+    stroke: var(--_ink-2);
+    stroke-opacity: var(--_alpha-2);
+  }
+  .tl-mark__line[data-ink='3'] {
+    stroke: var(--_ink-3);
+    stroke-opacity: var(--_alpha-3);
+  }
+
+  /* Forced colours keep stroke geometry and drop the palette, which is fine:
+   * the T is carried by the gaps, not by colour. The ink selectors are
+   * repeated on purpose — a media query adds no specificity, so a bare
+   * `.tl-mark__line` would lose to the `[data-ink]` rules above and two inks
+   * would keep their themed colours, including a brown the token layer never
+   * remaps and which is invisible on a dark high-contrast canvas. */
+  @media (forced-colors: active) {
+    .tl-mark__line,
+    .tl-mark__line[data-ink='2'],
+    .tl-mark__line[data-ink='3'] {
+      stroke: CanvasText;
+      stroke-opacity: 1;
+    }
+    .tl-mark[data-tone='inherit'] .tl-mark__line,
+    .tl-mark[data-tone='inherit'] .tl-mark__line[data-ink='2'],
+    .tl-mark[data-tone='inherit'] .tl-mark__line[data-ink='3'] {
+      stroke: currentColor;
+    }
+  }
+
+  /* ===========================================================================
+   * DETERMINATE — a real value
+   *
+   * Not a loading animation but a progress display, and the only variant that
+   * needs no reduced-motion special case. Row `r` of `n` fills while the value
+   * crosses [r/n, (r+1)/n]: the clamp turns one number on the root into a
+   * per-row dash offset, so the rows light top to bottom as the value climbs.
+   * ======================================================================== */
+  .tl-mark[data-loading='progress'] .tl-mark__line {
+    stroke-dasharray: 1;
+    stroke-dashoffset: clamp(0, 1 - (var(--_progress, 0) * var(--_lines, 1) - var(--_line, 0)), 1);
+    transition: stroke-dashoffset var(--tl-duration-lg, 250ms) var(--tl-ease-out, ease-out);
+  }
+
+  /* ===========================================================================
+   * LOOPS
+   *
+   * The keyframes are declared unconditionally; only the `animation`
+   * declarations that start them sit under `no-preference`. Both halves of
+   * that are load-bearing. An earlier framework declared the animations
+   * unconditionally and switched them off in a `reduce` block, and lost the
+   * specificity fight silently — a loop is invisible in a screenshot; gating
+   * the declaration means there is nothing to out-specify. And a keyframe
+   * declared inside the media block simply does not exist under the
+   * preference, which silently emptied Spinner's deliberate re-declaration of
+   * the pulse — the one loop whose motion is the message.
+   * ======================================================================== */
+
+  /* -- sweep: page loading ----------------------------------------------------
+   * Each row draws in from the left, holds, and wipes out to the right; rows
+   * are staggered top to bottom, so the disc assembles as a scan and the T
+   * appears the moment its rows arrive. A dash offset of 1 hides the row
+   * before its start, 0 shows all of it, -1 hides it past its end — one
+   * property carries the whole entrance-hold-exit on a single monotone run,
+   * so there is no seam between phases for the eye to catch.
+   *
+   * The hold is deliberately long. Assembly is the approach; the finished
+   * mark is the payoff, and a loader that spends most of its cycle in transit
+   * reads as a thing that never arrives. */
+  @keyframes tl-mark-sweep {
+    0% {
+      stroke-dashoffset: 1;
+      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    14%, 64% {
+      stroke-dashoffset: 0;
+      animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+    }
+    78%, 100% {
+      stroke-dashoffset: -1;
+    }
+  }
+
+  /* -- pulse: inline loading --------------------------------------------------
+   * A brightness wave travelling down the rows. Nothing moves and no geometry
+   * changes, which is what lets it work at 12px inside a button, and the
+   * whole mark stays legible at every frame because the dim rows are still
+   * drawn. The phase runs top to bottom: the delay grows toward the top, so
+   * the top row peaks first. */
+  @keyframes tl-mark-pulse {
+    0%, 100% { opacity: 0.32; }
+    28%      { opacity: 1; }
+  }
+
+  /* -- live: listening --------------------------------------------------------
+   * The lines breathe in and out along their own length like a level meter.
+   * The scale is wrapped in a rotation pair — turn the 45° hatch onto the x
+   * axis, scale, turn it back (MARK_ANGLE in markGeometry.ts) — so every piece
+   * shortens toward the disc's centre and the silhouette contracts while the T
+   * stays where it is, which is what makes it read as the disc responding
+   * rather than as the letter deforming. The phase step is deliberately not a
+   * divisor of the line count, so the pattern never resolves into a wave front. */
+  @keyframes tl-mark-live {
+    0%, 100% { transform: rotate(-45deg) scaleX(1) rotate(45deg); }
+    50%      { transform: rotate(-45deg) scaleX(0.74) rotate(45deg); }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tl-mark[data-loading='sweep'] .tl-mark__line {
+      stroke-dasharray: 1;
+      /* `backwards` is what makes the first cycle a scan. The delays below
+       * are positive, and without a fill mode a row shows its resting value —
+       * offset 0, fully drawn — until its delay elapses, so the mark would
+       * mount as the finished logo, blink each row out top to bottom and only
+       * then draw it in. Holding the 0% frame through the delay keeps every
+       * row hidden until its turn. Negative delays would also cure it but at
+       * the cost of the deliberate first-cycle assembly. */
+      animation: tl-mark-sweep var(--_tempo-sweep) linear infinite backwards;
+      /* 4.5% of the cycle per row: the eighth row starts 880ms after the
+       * first at the default tempo, which is a scan rather than a cascade. */
+      animation-delay: calc(var(--_tempo-sweep) * var(--_line, 0) * 0.045);
+    }
+
+    .tl-mark[data-loading='pulse'] .tl-mark__line {
+      animation: tl-mark-pulse var(--_tempo-pulse) ease-in-out infinite;
+      animation-delay: calc(
+        var(--_tempo-pulse) * (var(--_lines, 1) - var(--_line, 0)) * -0.09
+      );
+    }
+
+    .tl-mark[data-live] .tl-mark__line {
+      transform-box: view-box;
+      transform-origin: 12px 12px;
+      animation: tl-mark-live var(--_tempo-live) ease-in-out infinite;
+      animation-delay: calc(var(--_tempo-live) * var(--_line, 0) * -0.19);
+    }
+  }
+
+  /* An infinite animation never reports finished, and `usePresence` waits on
+   * every animation in the subtree before it lets an overlay unmount — so a
+   * loading button inside a closing dialog would hold that dialog, its scroll
+   * lock and its inert marker until the exit backstop fired, long after the
+   * panel had faded. Every loop is cancelled outright on the way out. Placed
+   * after the loop block because the specificities tie at (0,3,0) and source
+   * order has to decide; the ancestor is pinned to a framework surface
+   * (`data-tl`) so a consumer's own `data-state` vocabulary cannot stop a mark
+   * that is not going anywhere. Spinner's reduced-motion re-declaration sits
+   * above this and repeats the cancel itself. */
+  [data-tl][data-state='exiting'] .tl-mark__line {
+    animation: none;
+  }
+
+  /* Under the preference none of the loops above is declared, so this only
+   * guarantees that a sweeping mark rests as the finished logo rather than at
+   * whichever dash offset a keyframe happened to start on. */
+  @media (prefers-reduced-motion: reduce) {
+    .tl-mark[data-loading='sweep'] .tl-mark__line {
+      stroke-dasharray: none;
+      stroke-dashoffset: 0;
+    }
+  }
+}

@@ -1,0 +1,88 @@
+@layer tl.components {
+  .tl-empty-state {
+    --_pad: var(--tl-space-14);
+    --_icon-size: 40px;
+    --_title-size: var(--tl-text-lg);
+    --_gap: var(--tl-space-4);
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--_gap);
+
+    padding: var(--_pad) var(--tl-space-8);
+    text-align: center;
+    color: var(--tl-text-secondary);
+  }
+
+  /* -- Size ----------------------------------------------------------------
+   * Only three values change per size. The component is a stack of centred
+   * text; a fourth size would be four numbers nobody can tell apart. */
+  .tl-empty-state[data-size='sm'] {
+    --_pad: var(--tl-space-9);
+    --_icon-size: 28px;
+    --_title-size: var(--tl-text-md);
+    --_gap: var(--tl-space-3);
+  }
+
+  .tl-empty-state[data-size='lg'] {
+    --_pad: var(--tl-space-24);
+    --_icon-size: 56px;
+    --_title-size: var(--tl-text-xl);
+    --_gap: var(--tl-space-5);
+  }
+
+  .tl-empty-state__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: calc(var(--_icon-size) * 1.8);
+    height: calc(var(--_icon-size) * 1.8);
+    margin-block-end: var(--tl-space-2);
+
+    font-size: var(--_icon-size);
+    color: var(--tl-text-subtle);
+    /* A soft disc rather than a bare glyph: at these sizes a lone stroke icon
+     * floating above centred text reads as an image that failed to load. */
+    background: var(--tl-surface-sunken);
+    border-radius: var(--tl-radius-round);
+  }
+
+  .tl-empty-state__title {
+    margin: 0;
+    font-size: var(--_title-size);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-snug);
+    letter-spacing: var(--tl-tracking-tight);
+    color: var(--tl-text);
+  }
+
+  .tl-empty-state__description {
+    /* Capped in `ch` rather than `rem` so the measure stays around 60-70
+     * characters whatever the type scale is set to. Centred text past that
+     * width is genuinely hard to track back to the start of the next line. */
+    max-width: 56ch;
+    margin: 0;
+    font-size: var(--tl-text-md);
+    line-height: var(--tl-leading-normal);
+    text-wrap: pretty;
+  }
+
+  .tl-empty-state__actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--tl-space-4);
+    margin-block-start: var(--tl-space-3);
+  }
+
+  /* The disc behind the glyph is background-only and disappears in forced
+   * colors, leaving the icon adrift. An outline puts the shape back. */
+  @media (forced-colors: active) {
+    .tl-empty-state__icon {
+      border: 1px solid CanvasText;
+    }
+  }
+}

@@ -1,0 +1,274 @@
+/* ---------------------------------------------------------------------------
+ * TIER 2 — SEMANTIC TOKENS
+ *
+ * Every token here names a ROLE, never an appearance. Components reference only
+ * this tier. Moving `--tl-accent` from amber to any other hue must not require
+ * touching a single component file.
+ *
+ * THEME MECHANISM
+ * ---------------
+ * Light values live on :root; dark values live under [data-theme="dark"].
+ * `light-dark()` is deliberately not used:
+ *   1. It is ignored under `forced-colors: active`, so a separate high-contrast
+ *      block would be needed regardless.
+ *   2. An explicit attribute lets the app resolve "system" once in JS and pin
+ *      the result before first paint, which is what removes the flash that
+ *      `prefers-color-scheme` alone produces.
+ *   3. An attribute is testable — a Playwright run can assert the resolved
+ *      theme; a media query can only be emulated.
+ * ThemeProvider owns the attribute and tracks the system preference live.
+ *
+ * CONTRAST
+ * --------
+ * Text roles are placed to clear WCAG 2.2 AA on their intended surface: 4.5:1
+ * for body text, 3:1 for large text and for meaningful graphics/UI borders.
+ * Where a role sits deliberately below that line, the comment says so and why.
+ * ------------------------------------------------------------------------- */
+@layer tl.tokens {
+
+  /* ========================================================================= */
+  /* LIGHT                                                                     */
+  /* ========================================================================= */
+  :root {
+    color-scheme: light;
+
+    /* -- Surfaces ---------------------------------------------------------- */
+    --tl-bg:                var(--tl-sand-100);
+    --tl-surface:           var(--tl-sand-25);
+    --tl-surface-hover:     var(--tl-sand-50);
+    --tl-surface-active:    var(--tl-sand-150);
+    --tl-surface-sunken:    var(--tl-sand-150);
+    --tl-surface-elevated:  var(--tl-sand-0);
+    --tl-surface-inverse:   var(--tl-sand-900);
+    --tl-surface-disabled:  var(--tl-sand-150);
+    --tl-surface-accent:    var(--tl-amber-100);
+
+    /* Scrim behind dialogs and drawers. Kept a flat colour rather than a
+     * backdrop-filter: blurring a dense transcript behind a modal is expensive
+     * every frame and makes the underlying text look like a rendering fault. */
+    --tl-scrim: oklch(24% 0.02 66 / 0.48);
+
+    /* -- Text -------------------------------------------------------------- */
+    --tl-text:            var(--tl-sand-900);
+    --tl-text-secondary:  var(--tl-sand-700);
+    --tl-text-muted:      var(--tl-sand-600);
+    --tl-text-subtle:     var(--tl-sand-550);
+    /* Below AA on purpose. WCAG 1.4.3 exempts inactive controls, and a disabled
+     * field rendered at full contrast does not read as disabled. Never use this
+     * for content that is merely de-emphasised — that is `text-subtle`. */
+    --tl-text-disabled:   var(--tl-sand-400);
+    --tl-text-inverse:    var(--tl-sand-50);
+    /* Near-black, not white: amber-500 is light enough (L 76%) that white text
+     * on it measures ~2.1:1 and fails AA outright. */
+    --tl-text-on-accent:  var(--tl-sand-950);
+    --tl-text-accent:     var(--tl-amber-800);
+    --tl-text-brand:      var(--tl-brown-600);
+
+    /* -- Mark ---------------------------------------------------------------
+     * The logo's three inks. Named for the mark rather than reusing the accent
+     * interaction states, because a hover colour that later shifts for a
+     * usability reason must not quietly recolour the brand. */
+    --tl-mark-ink:       var(--tl-amber-500);
+    --tl-mark-ink-deep:  var(--tl-amber-700);
+    --tl-mark-ink-accent: var(--tl-brown-600);
+
+    /* -- Borders ----------------------------------------------------------- */
+    --tl-border:         var(--tl-sand-300);
+    --tl-border-subtle:  var(--tl-sand-250);
+    --tl-border-strong:  var(--tl-sand-400);
+    --tl-border-inverse: var(--tl-sand-700);
+    --tl-divider:        var(--tl-sand-250);
+
+    /* -- Accent ------------------------------------------------------------ */
+    --tl-accent:          var(--tl-amber-500);
+    --tl-accent-hover:    var(--tl-amber-600);
+    --tl-accent-active:   var(--tl-amber-700);
+    --tl-accent-subtle:   var(--tl-amber-100);
+    --tl-accent-border:   var(--tl-amber-400);
+    --tl-accent-emphasis: var(--tl-amber-800);
+
+    /* -- Brand (secondary) ------------------------------------------------- */
+    --tl-brand:        var(--tl-brown-600);
+    --tl-brand-hover:  var(--tl-brown-700);
+    --tl-brand-subtle: var(--tl-brown-300);
+
+    /* -- Status ------------------------------------------------------------
+     * Each status exposes four roles so a component never has to reach past
+     * this tier: `-fg` for text/icons, `-bg` for tints, `-border` for outlines,
+     * and `-solid` for filled emphasis. */
+    --tl-danger-fg:      var(--tl-red-500);
+    --tl-danger-bg:      var(--tl-red-100);
+    --tl-danger-border:  oklch(85% 0.075 28);
+    --tl-danger-solid:   var(--tl-red-500);
+    --tl-danger-hover:   var(--tl-red-600);
+    --tl-danger-on:      var(--tl-sand-0);
+
+    --tl-success-fg:     var(--tl-green-500);
+    --tl-success-bg:     var(--tl-green-100);
+    --tl-success-border: oklch(86% 0.055 158);
+    --tl-success-solid:  var(--tl-green-500);
+    --tl-success-on:     var(--tl-sand-0);
+
+    --tl-info-fg:        var(--tl-cyan-500);
+    --tl-info-bg:        var(--tl-cyan-100);
+    --tl-info-border:    oklch(86% 0.045 226);
+    --tl-info-solid:     var(--tl-cyan-500);
+    --tl-info-on:        var(--tl-sand-0);
+
+    --tl-warning-fg:     var(--tl-yellow-500);
+    --tl-warning-bg:     var(--tl-yellow-100);
+    --tl-warning-border: oklch(86% 0.080 78);
+    --tl-warning-solid:  var(--tl-yellow-500);
+    --tl-warning-on:     var(--tl-sand-0);
+
+    /* -- Focus --------------------------------------------------------------
+     * One ring for the whole framework. A 2px ring plus a 1px offset in the
+     * surface colour keeps the ring legible on top of a same-coloured border,
+     * which is the case that makes a plain outline disappear. Amber-800 rather
+     * than the accent itself: the accent is too light to hold 3:1 against the
+     * cream page (WCAG 2.2 SC 1.4.11 applies to focus indicators). */
+    --tl-focus-ring:   var(--tl-amber-800);
+    --tl-focus-width:  2px;
+    --tl-focus-offset: 1px;
+
+    /* -- Component surfaces ------------------------------------------------- */
+    --tl-field-bg:          var(--tl-sand-0);
+    --tl-field-border:      var(--tl-sand-300);
+    --tl-field-border-hover: var(--tl-sand-400);
+    --tl-overlay-bg:        var(--tl-sand-0);
+    --tl-overlay-border:    var(--tl-sand-250);
+    --tl-code-bg:           var(--tl-sand-150);
+
+    --tl-elevation-xs: var(--tl-shadow-xs);
+    --tl-elevation-sm: var(--tl-shadow-sm);
+    --tl-elevation-md: var(--tl-shadow-md);
+    --tl-elevation-lg: var(--tl-shadow-lg);
+  }
+
+  /* ========================================================================= */
+  /* DARK                                                                      */
+  /* ========================================================================= */
+  [data-theme='dark'] {
+    color-scheme: dark;
+
+    --tl-bg:                var(--tl-sand-950);
+    --tl-surface:           var(--tl-sand-900);
+    --tl-surface-hover:     var(--tl-sand-850);
+    --tl-surface-active:    var(--tl-sand-800);
+    --tl-surface-sunken:    var(--tl-sand-975);
+    --tl-surface-elevated:  var(--tl-sand-850);
+    --tl-surface-inverse:   var(--tl-sand-100);
+    --tl-surface-disabled:  var(--tl-sand-925);
+    --tl-surface-accent:    oklch(32% 0.055 66);
+
+    --tl-scrim: oklch(10% 0.008 66 / 0.72);
+
+    --tl-text:            var(--tl-sand-50);
+    --tl-text-secondary:  var(--tl-sand-250);
+    --tl-text-muted:      var(--tl-sand-400);
+    --tl-text-subtle:     var(--tl-sand-500);
+    --tl-text-disabled:   var(--tl-sand-600);
+    --tl-text-inverse:    var(--tl-sand-900);
+    --tl-text-on-accent:  var(--tl-sand-975);
+    --tl-text-accent:     var(--tl-amber-300);
+    --tl-text-brand:      var(--tl-brown-300);
+
+    /* On near-black the deep ink moves lighter, not darker, or it vanishes;
+     * the brown accent keeps the identity at a lightness that still reads. */
+    --tl-mark-ink:       oklch(73% 0.132 74);
+    --tl-mark-ink-deep:  var(--tl-amber-300);
+    --tl-mark-ink-accent: var(--tl-brown-300);
+
+    --tl-border:         var(--tl-sand-800);
+    --tl-border-subtle:  var(--tl-sand-850);
+    --tl-border-strong:  var(--tl-sand-700);
+    --tl-border-inverse: var(--tl-sand-300);
+    --tl-divider:        var(--tl-sand-850);
+
+    /* Dark surfaces need a less saturated, slightly lighter accent: amber-500
+     * on near-black vibrates badly and reads as though it is glowing. */
+    --tl-accent:          oklch(73% 0.132 74);
+    --tl-accent-hover:    oklch(78% 0.138 74);
+    --tl-accent-active:   oklch(82% 0.142 74);
+    --tl-accent-subtle:   oklch(32% 0.055 66);
+    --tl-accent-border:   oklch(48% 0.090 68);
+    --tl-accent-emphasis: var(--tl-amber-300);
+
+    --tl-brand:        var(--tl-brown-300);
+    --tl-brand-hover:  oklch(84% 0.070 64);
+    --tl-brand-subtle: var(--tl-brown-600);
+
+    --tl-danger-fg:      var(--tl-red-400);
+    --tl-danger-bg:      var(--tl-red-900);
+    --tl-danger-border:  oklch(42% 0.110 28);
+    --tl-danger-solid:   var(--tl-red-500);
+    --tl-danger-hover:   var(--tl-red-400);
+    --tl-danger-on:      var(--tl-sand-0);
+
+    --tl-success-fg:     var(--tl-green-400);
+    --tl-success-bg:     var(--tl-green-900);
+    --tl-success-border: oklch(40% 0.070 158);
+    --tl-success-solid:  var(--tl-green-500);
+    --tl-success-on:     var(--tl-sand-0);
+
+    --tl-info-fg:        var(--tl-cyan-400);
+    --tl-info-bg:        var(--tl-cyan-900);
+    --tl-info-border:    oklch(40% 0.060 226);
+    --tl-info-solid:     var(--tl-cyan-500);
+    --tl-info-on:        var(--tl-sand-0);
+
+    --tl-warning-fg:     var(--tl-yellow-400);
+    --tl-warning-bg:     var(--tl-yellow-900);
+    --tl-warning-border: oklch(42% 0.080 70);
+    --tl-warning-solid:  var(--tl-yellow-400);
+    --tl-warning-on:     var(--tl-sand-975);
+
+    /* Light amber, not amber-800: on a near-black page the dark ring is the
+     * one that vanishes. */
+    --tl-focus-ring: oklch(84% 0.130 78);
+
+    --tl-field-bg:           var(--tl-sand-925);
+    --tl-field-border:       var(--tl-sand-800);
+    --tl-field-border-hover: var(--tl-sand-700);
+    --tl-overlay-bg:         var(--tl-sand-850);
+    --tl-overlay-border:     var(--tl-sand-800);
+    --tl-code-bg:            var(--tl-sand-975);
+
+    /* Dark elevation is carried by surface lightness and a hairline; the
+     * shadows only deepen the separation rather than creating it. */
+    --tl-elevation-xs: 0 1px 2px oklch(0% 0 0 / 0.32);
+    --tl-elevation-sm: 0 2px 10px oklch(0% 0 0 / 0.30);
+    --tl-elevation-md: 0 10px 34px oklch(0% 0 0 / 0.42);
+    --tl-elevation-lg: 0 24px 70px oklch(0% 0 0 / 0.54);
+  }
+
+  /* ========================================================================= */
+  /* FORCED COLORS                                                             */
+  /* ========================================================================= */
+  /* Windows High Contrast replaces colours wholesale. Rather than fight it,
+   * map the semantic roles onto the system keywords so components keep their
+   * structure and every border the user relies on stays visible. */
+  @media (forced-colors: active) {
+    :root,
+    [data-theme='dark'] {
+      --tl-bg:              Canvas;
+      --tl-surface:         Canvas;
+      --tl-surface-hover:   Canvas;
+      --tl-surface-elevated: Canvas;
+      --tl-text:            CanvasText;
+      --tl-text-secondary:  CanvasText;
+      --tl-text-muted:      CanvasText;
+      --tl-text-subtle:     CanvasText;
+      --tl-text-disabled:   GrayText;
+      --tl-border:          CanvasText;
+      --tl-border-subtle:   CanvasText;
+      --tl-divider:         CanvasText;
+      --tl-accent:          Highlight;
+      --tl-text-on-accent:  HighlightText;
+      --tl-focus-ring:      Highlight;
+      --tl-field-bg:        Field;
+      --tl-field-border:    CanvasText;
+      --tl-overlay-bg:      Canvas;
+    }
+  }
+}

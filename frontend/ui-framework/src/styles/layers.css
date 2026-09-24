@@ -1,0 +1,10 @@
+/* ---------------------------------------------------------------------------
+ * Cascade layers.
+ *
+ * Declared once, first, so the order is fixed no matter what order the rest of
+ * the sheets are imported in. Anything a consumer writes unlayered beats every
+ * layer here — unlayered styles win over layered ones regardless of specificity
+ * — so overriding a component never turns into a specificity fight or an
+ * `!important`.
+ * ------------------------------------------------------------------------- */
+@layer tl.reset, tl.tokens, tl.base, tl.components, tl.overrides;

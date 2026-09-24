@@ -19,6 +19,15 @@ type Request struct {
 	SourceLanguage string `json:"source_language"`
 	TargetLanguage string `json:"target_language"`
 	Text           string `json:"text"`
+	SourceContext  string `json:"source_context,omitempty"`
+}
+
+type SourceDetection struct {
+	Method      string  `json:"method"`
+	Confidence  float64 `json:"confidence"`
+	Rank        uint8   `json:"rank"`
+	Uncertain   bool    `json:"uncertain"`
+	ContextUsed bool    `json:"context_used"`
 }
 
 type Usage struct {
@@ -27,17 +36,32 @@ type Usage struct {
 }
 
 type Response struct {
-	RequestID      string `json:"request_id"`
-	SourceLanguage string `json:"source_language"`
-	TargetLanguage string `json:"target_language"`
-	Translation    string `json:"translation"`
-	Model          string `json:"model"`
-	Usage          Usage  `json:"usage"`
+	RequestID       string           `json:"request_id"`
+	SourceLanguage  string           `json:"source_language"`
+	SourceDetection *SourceDetection `json:"source_detection,omitempty"`
+	TargetLanguage  string           `json:"target_language"`
+	Translation     string           `json:"translation"`
+	Model           string           `json:"model"`
+	Usage           Usage            `json:"usage"`
 }
 
 type Provider interface {
 	Ready(context.Context) error
 	Translate(context.Context, Request) (Response, error)
+}
+
+// StreamUpdate contains cumulative provisional text, never a committed
+// translation. Only TranslateStream's successful Response may be persisted.
+type StreamUpdate struct {
+	RequestID string
+	Index     uint64
+	Text      string
+}
+
+// StreamingProvider is optional; the synchronous Provider contract remains
+// available for deployments without the progressive GPU endpoint.
+type StreamingProvider interface {
+	TranslateStream(context.Context, Request, func(StreamUpdate) error) (Response, error)
 }
 
 type ProviderError struct {

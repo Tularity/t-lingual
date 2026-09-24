@@ -1,0 +1,107 @@
+@layer tl.components {
+  .tl-page-header {
+    --_bg: var(--tl-bg);
+    --_gap: var(--tl-space-6);
+    /* Offset for the sticky position, so a header underneath a fixed app bar
+     * can be told how far down to stop. Part of the styling contract rather
+     * than a prop: it is a length, and lengths belong in CSS. */
+    --_top: 0px;
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--_gap);
+    min-width: 0;
+    padding-block: var(--tl-space-10);
+  }
+
+  .tl-page-header[data-sticky] {
+    position: sticky;
+    inset-block-start: var(--_top);
+    z-index: var(--tl-z-sticky);
+    /* An opaque background is mandatory once the element overlaps content, and
+     * it must come from a token rather than `inherit`: `background: inherit` on
+     * a sticky element resolves against the parent's *computed* background,
+     * which for a page using the base radial bloom is `transparent`. */
+    background: var(--_bg);
+  }
+
+  .tl-page-header[data-divider] {
+    border-block-end: 1px solid var(--tl-divider);
+  }
+
+  .tl-page-header__breadcrumb {
+    min-width: 0;
+    font-size: var(--tl-text-sm);
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-page-header__main {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--tl-space-8);
+    /* The actions drop below the title rather than squeezing it. A header is
+     * the one place where an action row being clipped costs the most: it is
+     * where the primary verb for the whole screen lives. */
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .tl-page-header__text {
+    flex: 1 1 18rem;
+    min-width: 0;
+  }
+
+  .tl-page-header__eyebrow {
+    margin: 0 0 var(--tl-space-2);
+    font-size: var(--tl-text-xs);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-none);
+    letter-spacing: var(--tl-tracking-caps);
+    text-transform: uppercase;
+    color: var(--tl-text-muted);
+  }
+
+  /* The heading level is a document-outline decision, so the size is pinned
+   * here and does not move when a consumer drops the title to an h2. */
+  .tl-page-header__title {
+    margin: 0;
+    font-size: var(--tl-text-2xl);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-tight);
+    letter-spacing: var(--tl-tracking-tight);
+    color: var(--tl-text);
+    text-wrap: balance;
+  }
+
+  .tl-page-header__description {
+    margin: var(--tl-space-3) 0 0;
+    /* Long-form text past roughly 70 characters costs the reader a line-find on
+     * every wrap, so the description is capped rather than filling the screen. */
+    max-width: 68ch;
+    font-size: var(--tl-text-md);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-page-header__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tl-space-4);
+    flex: none;
+  }
+
+  .tl-page-header__extra {
+    min-width: 0;
+  }
+
+  /* Sticky headers sit over content, and under forced colors the background
+   * token resolves to Canvas but the boundary between header and content
+   * disappears without an explicit edge. */
+  @media (forced-colors: active) {
+    .tl-page-header[data-sticky] {
+      border-block-end: 1px solid CanvasText;
+    }
+  }
+}

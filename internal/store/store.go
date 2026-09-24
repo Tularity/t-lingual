@@ -15,8 +15,11 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("store: not found")
-	ErrConflict      = errors.New("store: conflict")
+	ErrNotFound = errors.New("store: not found")
+	ErrConflict = errors.New("store: conflict")
+	// ErrArchived remains an ErrConflict for callers that already handle
+	// conflicts, while allowing the API to report a precise archive state.
+	ErrArchived      = fmt.Errorf("%w: archived interpretation", ErrConflict)
 	ErrInvalidInvite = errors.New("store: invalid invitation")
 	ErrForbidden     = errors.New("store: forbidden")
 	ErrCapacity      = errors.New("store: capacity exhausted")
@@ -27,7 +30,8 @@ var (
 // connection makes transaction behavior deterministic and ensures connection-
 // local pragmas (notably foreign_keys) are always active.
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	dataRoot string
 }
 
 // Open opens path, creates its parent directory when needed, applies the
@@ -88,7 +92,11 @@ func OpenContext(ctx context.Context, path string) (*Store, error) {
 		}
 	}
 
-	s := &Store{db: db}
+	dataRoot := ""
+	if !isMemory {
+		dataRoot = filepath.Dir(path)
+	}
+	s := &Store{db: db, dataRoot: dataRoot}
 	if err := s.migrate(ctx); err != nil {
 		return closeOnError(err)
 	}
@@ -382,6 +390,140 @@ var migrations = []migration{{version: 1, sql: `
 	)
 	INSERT INTO invitation_failure_padding_v2(bucket, counter)
 		SELECT value, 0 FROM buckets;
+`}, {version: 11, sql: `
+	ALTER TABLE interpretation_sessions ADD COLUMN archived_at INTEGER;
+	ALTER TABLE interpretation_sessions ADD COLUMN archive_reason TEXT NOT NULL DEFAULT ''
+		CHECK (archive_reason IN ('', 'manual', 'inactivity'));
+	ALTER TABLE user_settings ADD COLUMN auto_archive_hours INTEGER NOT NULL DEFAULT 24
+		CHECK (auto_archive_hours BETWEEN 0 AND 8760);
+	CREATE INDEX interpretation_sessions_auto_archive_idx
+		ON interpretation_sessions(status, updated_at)
+		WHERE archived_at IS NULL;
+	CREATE INDEX segments_owner_end_idx
+		ON segments(user_id, session_id, end_ms DESC);
+`}, {version: 12, sql: `
+	ALTER TABLE interpretation_sessions ADD COLUMN recognition_languages_json TEXT NOT NULL DEFAULT '[]';
+	ALTER TABLE interpretation_sessions ADD COLUMN diarization INTEGER NOT NULL DEFAULT 0 CHECK (diarization IN (0, 1));
+	ALTER TABLE segments ADD COLUMN detected_language TEXT NOT NULL DEFAULT '';
+	ALTER TABLE segments ADD COLUMN speaker_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE segments ADD COLUMN wall0_ms INTEGER NOT NULL DEFAULT 0 CHECK (wall0_ms >= 0);
+	ALTER TABLE segments ADD COLUMN wall1_ms INTEGER NOT NULL DEFAULT 0 CHECK (wall1_ms >= 0);
+	CREATE TABLE session_shares (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL,
+		owner_user_id TEXT NOT NULL,
+		kind TEXT NOT NULL CHECK (kind IN ('user', 'link')),
+		permission TEXT NOT NULL CHECK (permission IN ('view', 'record')),
+		recipient_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+		token_hash BLOB UNIQUE CHECK (token_hash IS NULL OR length(token_hash) = 32),
+		token_sealed BLOB,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER,
+		revoked_at INTEGER,
+		FOREIGN KEY (session_id, owner_user_id) REFERENCES interpretation_sessions(id, user_id) ON DELETE CASCADE,
+		CHECK (expires_at IS NULL OR expires_at > created_at),
+		CHECK ((kind = 'user' AND recipient_user_id IS NOT NULL AND token_hash IS NULL AND token_sealed IS NULL)
+			OR (kind = 'link' AND recipient_user_id IS NULL AND length(token_hash) = 32 AND length(token_sealed) > 0))
+	);
+	CREATE INDEX session_shares_owner_idx ON session_shares(owner_user_id, session_id, created_at DESC);
+	CREATE INDEX session_shares_recipient_idx ON session_shares(recipient_user_id, session_id, revoked_at, expires_at);
+	CREATE TABLE guest_sessions (
+		id TEXT PRIMARY KEY,
+		share_id TEXT NOT NULL REFERENCES session_shares(id) ON DELETE CASCADE,
+		token_hash BLOB NOT NULL UNIQUE CHECK (length(token_hash) = 32),
+		display_name TEXT NOT NULL,
+		target_language TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL,
+		CHECK (expires_at > created_at)
+	);
+	CREATE INDEX guest_sessions_share_idx ON guest_sessions(share_id, expires_at);
+	CREATE TABLE viewer_preferences (
+		session_id TEXT NOT NULL REFERENCES interpretation_sessions(id) ON DELETE CASCADE,
+		viewer_id TEXT NOT NULL,
+		target_language TEXT NOT NULL,
+		updated_at INTEGER NOT NULL,
+		PRIMARY KEY (session_id, viewer_id)
+	);
+	CREATE TABLE segment_translations (
+		segment_id TEXT NOT NULL REFERENCES segments(id) ON DELETE CASCADE,
+		session_id TEXT NOT NULL REFERENCES interpretation_sessions(id) ON DELETE CASCADE,
+		target_language TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'failed')),
+		text TEXT NOT NULL DEFAULT '',
+		error TEXT NOT NULL DEFAULT '',
+		request_id TEXT NOT NULL DEFAULT '',
+		updated_at INTEGER NOT NULL,
+		PRIMARY KEY (segment_id, target_language)
+	);
+	CREATE INDEX segment_translations_session_idx ON segment_translations(session_id, target_language, segment_id);
+	CREATE TABLE provider_endpoints (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		provider TEXT NOT NULL CHECK (provider IN ('asr', 'translator')),
+		name TEXT NOT NULL,
+		base_url TEXT NOT NULL,
+		credential_sealed BLOB,
+		configuration_json TEXT NOT NULL DEFAULT '{}',
+		enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	);
+	CREATE INDEX provider_endpoints_user_idx ON provider_endpoints(user_id, provider, enabled);
+`}, {version: 13, sql: `
+ ALTER TABLE segments ADD COLUMN language_source TEXT NOT NULL DEFAULT '' CHECK (language_source IN ('', 'session', 'recognizer', 'text'));
+`}, {version: 14, sql: `
+ CREATE TABLE recording_parts (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  part_index INTEGER NOT NULL CHECK(part_index >= 0),
+  sample_rate INTEGER NOT NULL CHECK(sample_rate BETWEEN 8000 AND 192000),
+  offset_frames INTEGER NOT NULL CHECK(offset_frames >= 0),
+  frames INTEGER NOT NULL DEFAULT 0 CHECK(frames >= 0),
+  bytes INTEGER NOT NULL DEFAULT 0 CHECK(bytes >= 0 AND bytes = frames * 4),
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY(session_id,user_id) REFERENCES interpretation_sessions(id,user_id) ON DELETE CASCADE,
+  UNIQUE(session_id,run_id,part_index)
+ );
+ CREATE INDEX recording_parts_owner_idx ON recording_parts(user_id,session_id,created_at);
+ CREATE INDEX segments_session_time_idx ON segments(session_id,start_ms,sequence);
+ ALTER TABLE user_settings ADD COLUMN interface_language TEXT NOT NULL DEFAULT 'system'
+  CHECK(interface_language IN ('system','en','zh-Hans'));
+ ALTER TABLE user_settings ADD COLUMN theme_preference TEXT NOT NULL DEFAULT 'system'
+  CHECK(theme_preference IN ('system','light','dark'));
+`}, {version: 15, sql: `
+ ALTER TABLE segment_translations ADD COLUMN resolved_source_language TEXT NOT NULL DEFAULT '';
+ ALTER TABLE segment_translations ADD COLUMN source_detection_json TEXT NOT NULL DEFAULT '';
+`}, {version: 16, sql: `
+ ALTER TABLE invitations ADD COLUMN kind TEXT NOT NULL DEFAULT 'registration'
+  CHECK(kind IN ('registration','login'));
+ ALTER TABLE invitations ADD COLUMN target_user_id TEXT NOT NULL DEFAULT '';
+ ALTER TABLE invitations ADD COLUMN not_before INTEGER NOT NULL DEFAULT 0;
+ UPDATE invitations SET not_before = created_at WHERE not_before = 0;
+ CREATE INDEX invitations_kind_target_idx ON invitations(kind,target_user_id,expires_at)
+  WHERE used_at IS NULL AND revoked_at IS NULL;
+`}, {version: 17, sql: `
+ ALTER TABLE user_settings RENAME COLUMN interface_language TO previous_interface_language;
+ ALTER TABLE user_settings ADD COLUMN interface_language TEXT NOT NULL DEFAULT 'system'
+  CHECK(length(interface_language) BETWEEN 2 AND 16);
+ UPDATE user_settings SET interface_language = previous_interface_language;
+ ALTER TABLE user_settings DROP COLUMN previous_interface_language;
+`}, {version: 18, sql: `
+ CREATE TABLE site_settings (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  registration_help_markdown TEXT NOT NULL,
+  code_attempts_per_minute INTEGER NOT NULL CHECK(code_attempts_per_minute BETWEEN 1 AND 10),
+  updated_at INTEGER NOT NULL
+ );
+ INSERT INTO site_settings(id,registration_help_markdown,code_attempts_per_minute,updated_at)
+ VALUES (1,'Ask an administrator for a one-time six-digit registration code. Enter the code to begin registration, then create a passkey to secure your account.',3,
+  CAST(strftime('%s','now') AS INTEGER)*1000000000);
+`}, {version: 19, sql: `
+ ALTER TABLE users ADD COLUMN onboarding_complete INTEGER NOT NULL DEFAULT 0
+  CHECK(onboarding_complete IN (0,1));
+ UPDATE users SET onboarding_complete=1;
 `}}
 
 func encodeTime(value time.Time) int64 {

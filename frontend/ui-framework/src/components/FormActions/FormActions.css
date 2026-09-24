@@ -1,0 +1,62 @@
+@layer tl.components {
+  .tl-form-actions {
+    /* The stacked layout is expressed as three property values rather than as a
+     * second copy of the rule, so the media query below and the `always` case
+     * set the same three things and cannot drift apart. */
+    --_direction: row;
+    --_cross: center;
+    --_push: auto;
+
+    display: flex;
+    flex-direction: var(--_direction);
+    align-items: var(--_cross);
+    flex-wrap: wrap;
+    gap: var(--tl-space-4);
+  }
+
+  .tl-form-actions[data-align='start']   { justify-content: flex-start; }
+  .tl-form-actions[data-align='end']     { justify-content: flex-end; }
+  .tl-form-actions[data-align='between'] { justify-content: space-between; }
+
+  /* Equal-width actions for a narrow column or a mobile sheet. The destructive
+   * slot takes a share too, otherwise it would be the one odd-sized box. */
+  .tl-form-actions[data-align='stretch'] > * {
+    flex: 1 1 0;
+  }
+
+  /* An auto margin eats the free space between this and the rest of the row.
+   * Deliberately not `order`, which would desynchronise the visual order from
+   * the focus order. */
+  .tl-form-actions__destructive {
+    margin-inline-end: var(--_push);
+  }
+
+  .tl-form-actions[data-divided] {
+    margin-block-start: var(--tl-space-10);
+    padding-block-start: var(--tl-space-8);
+    border-block-start: 1px solid var(--tl-divider);
+  }
+
+  /* -- Stacking -------------------------------------------------------------
+   * `column-reverse` lifts the last child — the primary action, by the ordering
+   * this component documents — to the top of the stack without the children
+   * moving in the DOM. The inline auto margin has to go: on the cross axis it
+   * would cancel the stretch and leave the destructive button as the one
+   * content-width box in a column of full-width ones. */
+  .tl-form-actions[data-stack='always'] {
+    --_direction: column-reverse;
+    --_cross: stretch;
+    --_push: 0;
+  }
+
+  /* 30rem rather than 480px so the breakpoint moves with the user's text size:
+   * someone running a large default font hits the stacked layout earlier, which
+   * is when the row would have wrapped anyway. */
+  @media (max-width: 30rem) {
+    .tl-form-actions[data-stack='auto'] {
+      --_direction: column-reverse;
+      --_cross: stretch;
+      --_push: 0;
+    }
+  }
+}

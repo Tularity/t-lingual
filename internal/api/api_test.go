@@ -64,7 +64,8 @@ func newAPIFixtureWithLive(t *testing.T, live LiveHandler) *apiFixture {
 	}
 	adminService, _ := admin.New(database, keyring, configuration.InvitationTTL)
 	workspaceService, _ := workspace.New(database)
-	now := time.Date(2026, 9, 1, 6, 0, 0, 0, time.UTC)
+	// Authentication uses the real clock; fixed fixture dates eventually expire.
+	now := time.Now().UTC()
 	users := map[string]domain.User{}
 	tokens := map[string]string{}
 	for index, role := range []domain.Role{domain.RoleUser, domain.RoleUser, domain.RoleAdmin} {

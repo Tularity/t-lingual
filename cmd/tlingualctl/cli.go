@@ -27,6 +27,7 @@ const (
 type adminClient interface {
 	Status(context.Context) (control.StatusResponse, error)
 	CreateInvitation(context.Context, time.Duration) (control.CreateInvitationResponse, error)
+	CreateCode(context.Context, control.CreateCodeRequest) (control.CreateCodeResponse, error)
 	ListInvitations(context.Context, int, int) (control.InvitationListResponse, error)
 	RevokeInvitation(context.Context, string) error
 	ListUsers(context.Context, int, int) (control.UserListResponse, error)
@@ -43,6 +44,7 @@ const (
 	commandHelp commandKind = iota
 	commandStatus
 	commandInviteCreate
+	commandCodeCreate
 	commandInviteList
 	commandInviteRevoke
 	commandUsersList
@@ -51,11 +53,14 @@ const (
 )
 
 type invocation struct {
-	kind   commandKind
-	ttl    time.Duration
-	id     string
-	role   domain.Role
-	status domain.UserStatus
+	kind      commandKind
+	ttl       time.Duration
+	id        string
+	codeKind  string
+	notBefore string
+	expiresAt string
+	role      domain.Role
+	status    domain.UserStatus
 }
 
 type rootOptions struct {
@@ -164,11 +169,46 @@ func parseInvocation(args []string) (invocation, error) {
 		return invocation{kind: commandStatus}, nil
 	case "invite":
 		return parseInviteInvocation(args[1:])
+	case "code":
+		return parseCodeInvocation(args[1:])
 	case "users":
 		return parseUsersInvocation(args[1:])
 	default:
 		return invocation{}, &usageError{message: fmt.Sprintf("unknown command %q", args[0])}
 	}
+}
+
+func parseCodeInvocation(args []string) (invocation, error) {
+	if len(args) == 0 || args[0] != "create" {
+		return invocation{}, &usageError{message: "code requires create"}
+	}
+	flags := flag.NewFlagSet("code create", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	kind := flags.String("kind", "", "registration or login")
+	user := flags.String("user", "", "login target user ID")
+	ttl := flags.Duration("ttl", 0, "code lifetime")
+	notBefore := flags.String("not-before", "", "RFC3339 activation")
+	expiresAt := flags.String("expires-at", "", "RFC3339 expiry")
+	if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 {
+		return invocation{}, &usageError{message: "code create accepts only --kind, --user, --not-before, --ttl, and --expires-at"}
+	}
+	if (*kind != "login" && *kind != "registration") || (*kind == "login" && *user == "") ||
+		(*kind == "registration" && *user != "") || (*ttl != 0 && *expiresAt != "") {
+		return invocation{}, &usageError{message: "code kind, target, or expiry is invalid"}
+	}
+	if *ttl < 0 {
+		return invocation{}, &usageError{message: "--ttl must be positive"}
+	}
+	for _, value := range []string{*notBefore, *expiresAt} {
+		if value == "" {
+			continue
+		}
+		if _, err := time.Parse(time.RFC3339Nano, value); err != nil {
+			return invocation{}, &usageError{message: "--not-before and --expires-at must be RFC3339"}
+		}
+	}
+	return invocation{kind: commandCodeCreate, codeKind: *kind, id: *user, ttl: *ttl,
+		notBefore: *notBefore, expiresAt: *expiresAt}, nil
 }
 
 func parseInviteInvocation(args []string) (invocation, error) {
@@ -265,6 +305,28 @@ func execute(ctx context.Context, client adminClient, command invocation, jsonOu
 			return writeJSON(output, response)
 		}
 		return writeCreatedInvitation(output, response)
+	case commandCodeCreate:
+		request := control.CreateCodeRequest{Kind: command.codeKind, TargetUserID: command.id,
+			NotBefore: command.notBefore, ExpiresAt: command.expiresAt}
+		if command.ttl > 0 {
+			request.TTL = command.ttl.String()
+		}
+		created, err := client.CreateCode(ctx, request)
+		if err != nil {
+			return err
+		}
+		if !validInvitationCode(created.Code) || created.Invitation.ID == "" ||
+			created.Invitation.Kind != command.codeKind || created.Invitation.TargetUserID != command.id {
+			return errors.New("the running server returned an invalid code response")
+		}
+		if jsonOutput {
+			return writeJSON(output, created)
+		}
+		_, err = fmt.Fprintf(output, "Code created.\nKind: %s\nCode: %s\nID: %s\nActive: %s\nExpires: %s\n",
+			created.Invitation.Kind, created.Code, safeCell(created.Invitation.ID),
+			created.Invitation.NotBefore.UTC().Format(time.RFC3339),
+			created.Invitation.ExpiresAt.UTC().Format(time.RFC3339))
+		return err
 	case commandInviteList:
 		response, err := client.ListInvitations(ctx, 500, 0)
 		if err != nil {
@@ -447,6 +509,8 @@ Usage:
   tlingualctl [--json] [--socket PATH] invite create [--ttl DURATION]
   tlingualctl [--json] [--socket PATH] invite list
   tlingualctl [--json] [--socket PATH] invite revoke <invitation-id>
+  tlingualctl [--json] [--socket PATH] code create --kind login --user <user-id> [--not-before RFC3339] [--ttl 10m | --expires-at RFC3339]
+  tlingualctl [--json] [--socket PATH] code create --kind registration [--not-before RFC3339] [--ttl 24h | --expires-at RFC3339]
   tlingualctl [--json] [--socket PATH] users list
   tlingualctl [--json] [--socket PATH] users set-role <user-id> user|admin
   tlingualctl [--json] [--socket PATH] users enable <user-id>

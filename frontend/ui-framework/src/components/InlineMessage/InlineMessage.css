@@ -1,0 +1,51 @@
+@layer tl.components {
+  .tl-inline-message {
+    /* One property carries the whole variant here — there is no fill and no
+     * border to reassign, which is the point of the component. Size owns the
+     * second; both are declared with a default so a variant or size selector
+     * only ever overrides, never establishes. */
+    --_fg: var(--tl-text-secondary);
+    --_fs: var(--tl-text-sm);
+
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-3);
+
+    color: var(--_fg);
+    font-size: var(--_fs);
+    line-height: var(--tl-leading-snug);
+    /* `text-wrap: pretty` keeps a two-word orphan off the last line of a
+     * validation message, which at this length is most of them. */
+    text-wrap: pretty;
+  }
+
+  .tl-inline-message[data-size='sm'] { --_fs: var(--tl-text-sm); }
+  .tl-inline-message[data-size='md'] { --_fs: var(--tl-text-md); }
+
+  .tl-inline-message[data-variant='info']    { --_fg: var(--tl-info-fg); }
+  .tl-inline-message[data-variant='success'] { --_fg: var(--tl-success-fg); }
+  .tl-inline-message[data-variant='warning'] { --_fg: var(--tl-warning-fg); }
+  .tl-inline-message[data-variant='danger']  { --_fg: var(--tl-danger-fg); }
+
+  .tl-inline-message__icon {
+    display: inline-flex;
+    flex: none;
+    font-size: 1.15em;
+    /* Nudged to sit on the cap height rather than the line box centre: at 13px
+     * a circular glyph aligned geometrically reads a full pixel too high. */
+    margin-block-start: 0.05em;
+  }
+
+  .tl-inline-message__content {
+    min-width: 0;
+  }
+
+  /* Colour is stripped in forced colors, so the glyph is the only thing left
+   * distinguishing an error from a hint. That is exactly why there is always
+   * a glyph — nothing else to do here but let the system colour take over. */
+  @media (forced-colors: active) {
+    .tl-inline-message {
+      --_fg: CanvasText;
+    }
+  }
+}

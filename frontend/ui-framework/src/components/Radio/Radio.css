@@ -1,0 +1,281 @@
+@layer tl.components {
+  /* -- Group --------------------------------------------------------------- */
+  .tl-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-5);
+  }
+
+  .tl-radio-group__label {
+    font-size: var(--tl-text-sm);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-snug);
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-radio-group__items {
+    display: flex;
+    gap: var(--tl-space-4);
+  }
+
+  .tl-radio-group[data-orientation='vertical'] .tl-radio-group__items {
+    flex-direction: column;
+    /* Bare rows shrink to their content so the dead space to the right of a
+     * short label is not a hit target that silently changes the answer. */
+    align-items: flex-start;
+  }
+
+  .tl-radio-group[data-orientation='horizontal'] .tl-radio-group__items {
+    flex-flow: row wrap;
+    align-items: stretch;
+    column-gap: var(--tl-space-9);
+  }
+
+  /* Tiles are meant to be the target, so they take the full track and match
+   * each other's height instead of hugging their text. */
+  .tl-radio-group[data-variant='card'] .tl-radio-group__items {
+    align-items: stretch;
+    column-gap: var(--tl-space-4);
+  }
+  .tl-radio-group[data-variant='card'][data-orientation='horizontal'] .tl-radio {
+    flex: 1 1 14rem;
+  }
+
+  /* -- Option -------------------------------------------------------------- */
+  .tl-radio {
+    --_size: 16px;
+    --_fs: var(--tl-text-sm);
+    --_target: 24px;
+    --_bg: var(--tl-field-bg);
+    --_border: var(--tl-field-border);
+    --_border-hover: var(--tl-field-border-hover);
+    --_fill: var(--tl-accent);
+    --_fill-hover: var(--tl-accent-hover);
+    --_dot: var(--tl-text-on-accent);
+    --_label: var(--tl-text);
+    --_description: var(--tl-text-muted);
+    --_tile-bg: var(--tl-surface);
+    --_tile-border: var(--tl-border);
+    --_tile-border-hover: var(--tl-border-strong);
+
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--tl-space-4);
+    font-size: var(--_fs);
+    line-height: var(--tl-leading-normal);
+    cursor: pointer;
+  }
+
+  .tl-radio[data-size='sm'] { --_size: 14px; --_fs: var(--tl-text-xs); }
+  .tl-radio[data-size='md'] { --_size: 16px; --_fs: var(--tl-text-sm); }
+  .tl-radio[data-size='lg'] { --_size: 20px; --_fs: var(--tl-text-md); }
+
+  .tl-radio__control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--_size);
+    /* One line of the label, so the dial holds the first line's optical centre
+     * when the text wraps. */
+    height: calc(var(--_fs) * var(--tl-leading-normal));
+  }
+
+  .tl-radio__input {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    margin: 0;
+    opacity: 0;
+    cursor: inherit;
+  }
+
+  /* WCAG 2.2 SC 2.5.8 wants 24x24. With text beside it the whole row is the
+   * target; alone, the transparent input grows and the drawn dial does not. */
+  .tl-radio:not([data-has-text]) .tl-radio__input {
+    inset: calc((var(--_target) - var(--_size)) / -2);
+  }
+
+  .tl-radio__box {
+    display: grid;
+    place-items: center;
+    width: var(--_size);
+    height: var(--_size);
+    color: var(--_dot);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-round);
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-radio__dot {
+    width: 40%;
+    height: 40%;
+    border-radius: var(--tl-radius-round);
+    background: currentColor;
+    opacity: 0;
+    /* The pop token collapses to `scale(1)` when the motion tokens zero the
+     * zoom, so reduced motion still gets the fade without a second media query.
+     * Opacity is faster than the transform, as with the checkbox mark: the dot
+     * is fully there before it has finished growing. */
+    transform: scale(var(--tl-zoom-pop));
+    transition:
+      opacity var(--tl-duration-2xs) var(--tl-ease-out),
+      transform var(--tl-duration-xs) var(--tl-ease-signature);
+  }
+
+  .tl-radio__input:checked ~ .tl-radio__box {
+    --_bg: var(--_fill);
+    --_border: var(--_fill);
+  }
+
+  .tl-radio__input:checked ~ .tl-radio__box .tl-radio__dot {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .tl-radio:hover .tl-radio__input:not(:disabled) ~ .tl-radio__box {
+    --_border: var(--_border-hover);
+  }
+
+  .tl-radio:hover .tl-radio__input:not(:disabled):checked ~ .tl-radio__box {
+    --_bg: var(--_fill-hover);
+    --_border: var(--_fill-hover);
+  }
+
+  /* The input holds focus but is transparent, so the base layer's ring would be
+   * invisible. Dropped there and redrawn on the dial. */
+  .tl-radio__input:focus-visible {
+    outline: none;
+  }
+  .tl-radio__input:focus-visible ~ .tl-radio__box {
+    outline: var(--tl-focus-width) solid var(--tl-focus-ring);
+    outline-offset: var(--tl-focus-offset);
+  }
+
+  .tl-radio[data-invalid] {
+    --_border: var(--tl-danger-fg);
+    --_border-hover: var(--tl-danger-fg);
+    --_tile-border: var(--tl-danger-fg);
+    /* The hover value has to move too, or pointing at an invalid tile would
+     * repaint it in the ordinary hover border and it would stop looking
+     * invalid — the same reason `--_border-hover` exists for the dial. */
+    --_tile-border-hover: var(--tl-danger-fg);
+  }
+
+  .tl-radio[data-disabled] {
+    --_bg: var(--tl-surface-disabled);
+    --_border: var(--tl-border);
+    --_border-hover: var(--tl-border);
+    --_fill: var(--tl-surface-disabled);
+    --_fill-hover: var(--tl-surface-disabled);
+    --_dot: var(--tl-text-disabled);
+    --_label: var(--tl-text-disabled);
+    --_description: var(--tl-text-disabled);
+    --_tile-bg: var(--tl-surface-disabled);
+    cursor: not-allowed;
+  }
+
+  /* -- Card ---------------------------------------------------------------- */
+  .tl-radio[data-variant='card'] {
+    padding: var(--tl-space-6) var(--tl-space-7);
+    background: var(--_tile-bg);
+    border: 1px solid var(--_tile-border);
+    border-radius: var(--tl-radius-md);
+    box-shadow: var(--tl-elevation-xs);
+    transition: var(--tl-transition-control);
+  }
+
+  /* `:has` is what lets the tile react to the input's own `:checked` state.
+   * The alternative is mirroring checkedness into React state purely to add a
+   * class, which forces every consumer of an uncontrolled group to become
+   * controlled for a border colour.
+   *
+   * `:not([data-disabled])` is load-bearing, not decoration: `:has()` takes the
+   * specificity of its argument, so without it this rule outweighs the disabled
+   * block and a disabled selected tile would keep its accent tint. */
+  .tl-radio[data-variant='card']:not([data-disabled]):has(.tl-radio__input:checked) {
+    --_tile-bg: var(--tl-accent-subtle);
+    --_tile-border: var(--tl-accent-border);
+  }
+
+  .tl-radio[data-variant='card']:hover:has(.tl-radio__input:not(:disabled)) {
+    --_tile-border: var(--_tile-border-hover);
+  }
+  /* An invalid tile is excluded so the rule above keeps the danger border on
+   * hover; on a valid one the selected tile deepens to the accent instead. */
+  .tl-radio[data-variant='card']:not([data-invalid]):hover:has(.tl-radio__input:not(:disabled):checked) {
+    --_tile-border: var(--tl-accent);
+  }
+
+  /* On a tile the ring belongs around the tile, not around the 16px dial. */
+  .tl-radio[data-variant='card']:has(.tl-radio__input:focus-visible) {
+    outline: var(--tl-focus-width) solid var(--tl-focus-ring);
+    outline-offset: var(--tl-focus-offset);
+  }
+  .tl-radio[data-variant='card'] .tl-radio__input:focus-visible ~ .tl-radio__box {
+    outline: none;
+  }
+
+  .tl-radio[data-variant='card'][data-disabled] {
+    box-shadow: none;
+  }
+
+  /* -- Text ---------------------------------------------------------------- */
+  .tl-radio__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-1);
+    min-width: 0;
+  }
+
+  .tl-radio__label {
+    color: var(--_label);
+    font-weight: var(--tl-weight-medium);
+  }
+
+  .tl-radio__description {
+    /* Relative to the label so the pairing survives every size. */
+    font-size: 0.9em;
+    line-height: var(--tl-leading-snug);
+    color: var(--_description);
+  }
+
+  /* The token layer remaps `--tl-accent` onto `Highlight` under forced colors,
+   * so a checked dial keeps a fill — the system highlight. The dot on top of it
+   * therefore has to be `HighlightText`, the colour paired with that fill, and
+   * not `CanvasText`. It is stated as a system keyword rather than left to
+   * `currentColor`, because a keyword is what is guaranteed to survive the
+   * forced palette on a background. The dot is invisible until checked, so the
+   * unchecked case needs no answer; a disabled dial keeps an ordinary fill,
+   * where `GrayText` still reads. */
+  @media (forced-colors: active) {
+    .tl-radio__box {
+      border-color: CanvasText;
+    }
+    /* See Input: the invalid state rides on border colour, which this mode
+     * replaces, so the dash is what survives to carry it. The card variant
+     * needs it on the tile as well, since that is the box the user sees. */
+    .tl-radio[data-invalid] .tl-radio__box,
+    .tl-radio[data-variant='card'][data-invalid] {
+      border-style: dashed;
+    }
+    .tl-radio__dot {
+      background: HighlightText;
+    }
+    .tl-radio__input:disabled ~ .tl-radio__box {
+      border-color: GrayText;
+    }
+    .tl-radio__input:disabled ~ .tl-radio__box .tl-radio__dot {
+      background: GrayText;
+    }
+    .tl-radio[data-variant='card'] {
+      border-color: CanvasText;
+    }
+    .tl-radio[data-variant='card']:has(.tl-radio__input:checked) {
+      border-color: Highlight;
+    }
+  }
+}

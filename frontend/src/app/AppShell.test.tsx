@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ToastProvider } from '../design-system'
+import { ThemeProvider, ToastProvider } from '../design-system'
 import { RouterProvider } from './router'
 import { AppShell } from './AppShell'
 
@@ -23,11 +23,11 @@ vi.mock('./auth', () => ({
 
 function renderShell() {
   return render(
-    <RouterProvider>
+    <ThemeProvider><RouterProvider>
       <ToastProvider>
         <AppShell><h1>Current page</h1></AppShell>
       </ToastProvider>
-    </RouterProvider>,
+    </RouterProvider></ThemeProvider>,
   )
 }
 
@@ -43,7 +43,11 @@ describe('application shell navigation', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/history')
     document.body.className = ''
+    // jsdom has no layout; the framework excludes truly hidden controls.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, width: 100, height: 36, top: 0, right: 100, bottom: 36, left: 0, toJSON: () => ({}) })
   })
+
+  afterEach(() => vi.restoreAllMocks())
 
   it('treats the mobile drawer as a focus-trapped modal and restores focus on Escape', async () => {
     const user = userEvent.setup()
@@ -55,7 +59,7 @@ describe('application shell navigation', () => {
     const close = within(drawer).getByRole('button', { name: 'Close navigation' })
     await waitFor(() => expect(close).toHaveFocus())
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
-    expect(document.body).toHaveClass('mobile-drawer-open')
+    expect(document.body.style.overflow).toBe('hidden')
 
     await user.keyboard('{Shift>}{Tab}{/Shift}')
     expect(within(drawer).getByRole('button', { name: 'Sign out' })).toHaveFocus()
@@ -64,13 +68,27 @@ describe('application shell navigation', () => {
     expect(screen.queryByRole('dialog', { name: 'Mobile navigation' })).not.toBeInTheDocument()
     await waitFor(() => expect(trigger).toHaveFocus())
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(document.body).not.toHaveClass('mobile-drawer-open')
+    expect(document.body.style.overflow).not.toBe('hidden')
 
     await user.click(trigger)
     await user.click(within(screen.getByRole('dialog', { name: 'Mobile navigation' })).getByRole('link', { name: 'History' }))
     expect(screen.queryByRole('dialog', { name: 'Mobile navigation' })).not.toBeInTheDocument()
   })
 
+  it('offers language and theme menus in both desktop and mobile headers', async () => {
+    const user = userEvent.setup()
+    renderShell()
+    const desktop = document.querySelector('.app-topbar')!
+    const mobile = document.querySelector<HTMLElement>('.mobile-header')!
+    mobile.style.display = 'grid'
+    expect(within(desktop as HTMLElement).getByRole('button', { name: 'Interface language' })).toContainElement(desktop.querySelector('img[src="/flags/lang-en-au.svg"]'))
+    expect(within(mobile as HTMLElement).getByRole('button', { name: 'Interface language' })).toBeInTheDocument()
+    expect(within(mobile as HTMLElement).getByRole('button', { name: 'Colour theme' })).toBeInTheDocument()
+    await user.click(within(desktop as HTMLElement).getByRole('button', { name: 'Colour theme' }))
+    expect(screen.getByRole('menu', { name: 'Colour theme' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /System theme/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('menuitemradio', { name: 'Dark' })).toBeInTheDocument()
+  })
   it('moves focus to main content after drawer navigation', async () => {
     const user = userEvent.setup()
     renderShell()

@@ -1,0 +1,75 @@
+@layer tl.components {
+  .tl-separator {
+    --_color: var(--tl-divider);
+    --_thickness: 1px;
+
+    flex: none;
+    border: 0;
+  }
+
+  /* -- Plain rule -----------------------------------------------------------
+   * A zero-size box with one border edge, rather than a filled box. Forced
+   * colors strips `background-color` but keeps borders, so this is the form
+   * that survives high contrast mode. */
+  .tl-separator[data-orientation='horizontal']:not([data-labelled]) {
+    block-size: 0;
+    inline-size: 100%;
+    border-block-start: var(--_thickness) solid var(--_color);
+  }
+
+  .tl-separator[data-orientation='vertical']:not([data-labelled]) {
+    inline-size: 0;
+    /* A vertical rule has no intrinsic height, so inside a flex row it would
+     * collapse to nothing. `stretch` gives it the row's height; the min-size is
+     * the fallback for every other formatting context. */
+    align-self: stretch;
+    min-block-size: 1em;
+    border-inline-start: var(--_thickness) solid var(--_color);
+  }
+
+  /* -- Labelled rule --------------------------------------------------------
+   * The two rule segments are pseudo-elements. They carry no meaning and
+   * pseudo-elements are never in the accessibility tree, so this keeps the
+   * element's only real child the label the name is computed from. */
+  .tl-separator[data-labelled] {
+    display: flex;
+    align-items: center;
+    gap: var(--tl-space-6);
+
+    color: var(--tl-text-subtle);
+    font-size: var(--tl-text-xs);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-none);
+  }
+
+  .tl-separator[data-labelled]::before,
+  .tl-separator[data-labelled]::after {
+    content: '';
+    flex: 1 1 auto;
+  }
+
+  .tl-separator[data-orientation='horizontal'][data-labelled] {
+    inline-size: 100%;
+  }
+
+  .tl-separator[data-orientation='horizontal'][data-labelled]::before,
+  .tl-separator[data-orientation='horizontal'][data-labelled]::after {
+    border-block-start: var(--_thickness) solid var(--_color);
+  }
+
+  .tl-separator[data-orientation='vertical'][data-labelled] {
+    flex-direction: column;
+    align-self: stretch;
+    min-block-size: var(--tl-space-16);
+  }
+
+  .tl-separator[data-orientation='vertical'][data-labelled]::before,
+  .tl-separator[data-orientation='vertical'][data-labelled]::after {
+    border-inline-start: var(--_thickness) solid var(--_color);
+  }
+
+  .tl-separator__label {
+    flex: none;
+    white-space: nowrap;
+  }
+}

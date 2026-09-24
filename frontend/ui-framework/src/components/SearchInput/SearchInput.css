@@ -1,0 +1,17 @@
+@layer tl.components {
+  /* Doubled up with `.tl-input` on purpose. Both blocks land on the same
+   * element, so a single class here would only win by import order — and import
+   * order is decided by whichever module the bundler reached first, which is
+   * not something a stylesheet should depend on. */
+  .tl-input.tl-search-input {
+    /* A search box is usually unlabelled in a toolbar, so its placeholder is
+     * doing real work and gets the darker of the two quiet text roles. */
+    --_placeholder: var(--tl-text-muted);
+  }
+
+  /* The magnifier is the field's only permanent affordance; letting it warm up
+   * on focus is the cheapest way to tie it to the caret. */
+  .tl-input.tl-search-input:focus-within .tl-input__adornment[data-side='start'] {
+    color: var(--tl-text-secondary);
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -86,6 +87,45 @@ func (c *Client) Ready(ctx context.Context) error {
 	}
 	if !health.Ready {
 		return ErrUnavailable
+	}
+	return nil
+}
+
+func (c *Client) Capabilities(ctx context.Context) (Capabilities, error) {
+	request, err := c.request(ctx, http.MethodGet, "/v1/capabilities", nil)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return Capabilities{}, fmt.Errorf("%w: query ASR capabilities: %v", ErrUnavailable, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return Capabilities{}, decodeProviderError(response)
+	}
+	var capabilities Capabilities
+	if err := decodeLimited(response.Body, &capabilities); err != nil {
+		return Capabilities{}, fmt.Errorf("decode ASR capabilities: %w", err)
+	}
+	if err := validateCapabilities(capabilities); err != nil {
+		return Capabilities{}, fmt.Errorf("invalid ASR capabilities: %w", err)
+	}
+	return capabilities, nil
+}
+
+func validateCapabilities(value Capabilities) error {
+	if value.Backend == "" || len(value.Backend) > 64 || len(value.SupportedLanguages) == 0 || len(value.SupportedLanguages) > 128 ||
+		value.LanguageRegions.Clock != "source_pcm_16khz_ms" ||
+		(value.LanguageRegions.Mode != "boundary_reset_no_prompt" && value.LanguageRegions.Mode != "prompt_switch") {
+		return errors.New("unsupported capability metadata")
+	}
+	seen := make(map[string]bool, len(value.SupportedLanguages))
+	for _, language := range value.SupportedLanguages {
+		if !validLanguage(language) || seen[language] {
+			return errors.New("invalid or duplicate supported language")
+		}
+		seen[language] = true
 	}
 	return nil
 }
@@ -188,6 +228,32 @@ func validateStart(input StartRequest) error {
 	if input.SpeakerEmbedding != "" && input.SpeakerEmbedding != "off" && input.SpeakerEmbedding != "profile" && input.SpeakerEmbedding != "segment" {
 		return errors.New("invalid ASR speaker embedding mode")
 	}
+	if err := validateLanguageRegions(input.LanguageRegions); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateLanguageRegions(regions []LanguageRegion) error {
+	if len(regions) > 1000 {
+		return errors.New("too many ASR language regions")
+	}
+	var previousEnd int64
+	for index, region := range regions {
+		if !validLanguage(region.Language) || region.StartMS < previousEnd || region.StartMS < 0 || region.StartMS > math.MaxInt64/16 {
+			return errors.New("invalid ASR language region")
+		}
+		if region.EndMS == nil {
+			if index != len(regions)-1 {
+				return errors.New("only the last ASR language region may remain open")
+			}
+			continue
+		}
+		if *region.EndMS <= region.StartMS || *region.EndMS > math.MaxInt64/16 {
+			return errors.New("invalid ASR language region end")
+		}
+		previousEnd = *region.EndMS
+	}
 	return nil
 }
 
@@ -201,8 +267,29 @@ func validateStartResponse(input StartRequest, info StartResponse) error {
 	if info.Audio != input.Audio {
 		return errors.New("audio specification did not match the request")
 	}
+	if math.IsNaN(info.CreatedAt) || math.IsInf(info.CreatedAt, 0) || info.CreatedAt <= 0 {
+		return errors.New("ASR session creation timestamp is invalid")
+	}
+	if input.AudioSense && !info.AudioSense {
+		return errors.New("requested ASR audio sense was not activated")
+	}
+	if input.Diarize && !info.Diarize {
+		return errors.New("requested ASR diarization was not activated")
+	}
 	if info.Language != "" && !validLanguage(info.Language) {
 		return errors.New("language is invalid")
+	}
+	if err := validateLanguageRegions(info.LanguageRegions); err != nil {
+		return fmt.Errorf("language regions in ASR response: %w", err)
+	}
+	if !sameLanguageRegions(input.LanguageRegions, info.LanguageRegions) {
+		return errors.New("language regions did not match the ASR request")
+	}
+	if info.LanguageRegionMode != "" && info.LanguageRegionMode != "prompt_switch" && info.LanguageRegionMode != "boundary_reset_no_prompt" {
+		return errors.New("language region mode is invalid")
+	}
+	if info.DiarLatencyMS != nil && *info.DiarLatencyMS < 0 || info.MaxSpeakers != nil && (*info.MaxSpeakers < 0 || *info.MaxSpeakers > 32) {
+		return errors.New("diarization metadata is invalid")
 	}
 	if info.CacheLines < 0 || info.CacheLines > 100_000 {
 		return errors.New("cache_lines is outside the supported range")
@@ -211,6 +298,22 @@ func validateStartResponse(input StartRequest, info StartResponse) error {
 		return errors.New("ws_url is invalid")
 	}
 	return nil
+}
+
+func sameLanguageRegions(requested, returned []LanguageRegion) bool {
+	if len(requested) != len(returned) {
+		return false
+	}
+	for index, region := range requested {
+		actual := returned[index]
+		if region.StartMS != actual.StartMS || region.Language != actual.Language || (region.EndMS == nil) != (actual.EndMS == nil) {
+			return false
+		}
+		if region.EndMS != nil && *region.EndMS != *actual.EndMS {
+			return false
+		}
+	}
+	return true
 }
 
 func validLanguage(value string) bool {
@@ -456,12 +559,22 @@ func validateEvent(event *Event) error {
 	if event.Language != "" && !validLanguage(event.Language) {
 		return errors.New("language is invalid")
 	}
-	if event.Sequence < 0 || event.Line < 0 || event.StartMS < 0 || event.EndMS < 0 ||
-		event.WallMS < 0 || event.Wall0MS < 0 || event.Wall1MS < 0 || event.PongTS < 0 {
+	if event.Sequence < 0 || event.Line < 0 || event.StartMS < 0 || event.EndMS < 0 || event.AudioPositionMS < 0 ||
+		event.WallMS < 0 || event.Wall0MS < 0 || event.Wall1MS < 0 || event.AudioClockMS < 0 || event.PongTS < 0 {
 		return errors.New("numeric field is negative")
 	}
 	if event.Type == "final" && event.EndMS < event.StartMS {
 		return errors.New("final time range is inverted")
+	}
+	if (event.Type == "speaker" && (event.Speaker == nil || *event.Speaker < 0 || *event.Speaker > 3 || event.Wall1MS < event.Wall0MS)) ||
+		(event.Type == "final" && event.Wall1MS != 0 && event.Wall1MS < event.Wall0MS) {
+		return errors.New("speaker or wall-clock range is invalid")
+	}
+	if len(event.InfoEvent) > 64 || len(event.State) > 64 || len(event.LanguageRegions) > 1000 {
+		return errors.New("ASR event metadata is too large")
+	}
+	if err := validateLanguageRegions(event.LanguageRegions); err != nil {
+		return err
 	}
 	return nil
 }

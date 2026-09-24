@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import App from '../App'
-import { ToastProvider } from '../design-system'
+import { ThemeProvider, ToastProvider } from '../design-system'
 import { AuthProvider } from './auth'
 import { RouterProvider } from './router'
 
@@ -34,7 +34,7 @@ describe('expired feature session handling', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<RouterProvider><ToastProvider><AuthProvider><App /></AuthProvider></ToastProvider></RouterProvider>)
+    render(<ThemeProvider><RouterProvider><ToastProvider><AuthProvider><App /></AuthProvider></ToastProvider></RouterProvider></ThemeProvider>)
 
     expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
     await waitFor(() => expect(window.location.pathname).toBe('/login'))

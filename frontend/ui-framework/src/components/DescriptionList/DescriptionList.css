@@ -1,0 +1,140 @@
+@layer tl.components {
+  .tl-dl {
+    /* The label column in `grid`. `max-content` would let one long label push
+     * the values off the panel, so it is capped and allowed to shrink. */
+    --_term-width: minmax(0, 12rem);
+    --_row-gap: var(--tl-space-6);
+    --_pair-gap: var(--tl-space-2);
+
+    margin: 0;
+    font-size: var(--tl-text-sm);
+    color: var(--tl-text);
+  }
+
+  .tl-dl__term {
+    color: var(--tl-text-muted);
+    font-weight: var(--tl-weight-medium);
+    line-height: var(--tl-leading-snug);
+  }
+
+  .tl-dl__details {
+    margin: 0;
+    color: var(--tl-text);
+    line-height: var(--tl-leading-snug);
+    /* Session ids, keys and URLs are the common value here and none of them
+     * contain a break opportunity, so without this one long value widens the
+     * whole panel. */
+    overflow-wrap: anywhere;
+  }
+
+  /* -- stacked -------------------------------------------------------------- */
+  .tl-dl[data-layout='stacked'] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_row-gap);
+  }
+
+  .tl-dl[data-layout='stacked'] .tl-dl__item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_pair-gap);
+  }
+
+  /* -- inline ---------------------------------------------------------------
+   * Label and value share a baseline and the value takes the slack, which is
+   * what makes a row of them line up as a column of values rather than as
+   * ragged sentences. */
+  .tl-dl[data-layout='inline'] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--_row-gap);
+  }
+
+  .tl-dl[data-layout='inline'] .tl-dl__item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--tl-space-3) var(--tl-space-6);
+  }
+
+  .tl-dl[data-layout='inline'] .tl-dl__details {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: end;
+  }
+
+  /* -- grid -----------------------------------------------------------------
+   * The alignment is between rows, so the grid has to be declared on the list
+   * and the item wrapper has to get out of the way. `display: contents` removes
+   * only the wrapper's box; the <dt>/<dd> keep their semantics and become grid
+   * items of the <dl> directly. */
+  .tl-dl[data-layout='grid'] {
+    display: grid;
+    grid-template-columns: var(--_term-width) minmax(0, 1fr);
+    column-gap: var(--tl-space-10);
+    row-gap: var(--_row-gap);
+    align-items: baseline;
+  }
+
+  .tl-dl[data-layout='grid'] .tl-dl__item {
+    display: contents;
+  }
+
+  /* -- divided --------------------------------------------------------------
+   * In `grid` the rule has to be drawn by the cells, because the wrapper that
+   * would otherwise carry it no longer generates a box. */
+  .tl-dl[data-divided][data-layout='stacked'] .tl-dl__item,
+  .tl-dl[data-divided][data-layout='inline'] .tl-dl__item {
+    padding-block-end: var(--_row-gap);
+    border-block-end: 1px solid var(--tl-divider);
+  }
+
+  .tl-dl[data-divided][data-layout='stacked'] .tl-dl__item:last-child,
+  .tl-dl[data-divided][data-layout='inline'] .tl-dl__item:last-child {
+    padding-block-end: 0;
+    border-block-end: 0;
+  }
+
+  .tl-dl[data-divided][data-layout='grid'] .tl-dl__term,
+  .tl-dl[data-divided][data-layout='grid'] .tl-dl__details {
+    padding-block-end: var(--_row-gap);
+    border-block-end: 1px solid var(--tl-divider);
+  }
+
+  .tl-dl[data-divided][data-layout='grid'] .tl-dl__item:last-child .tl-dl__term,
+  .tl-dl[data-divided][data-layout='grid'] .tl-dl__item:last-child .tl-dl__details {
+    padding-block-end: 0;
+    border-block-end: 0;
+  }
+
+  /* Below the narrow breakpoint the two columns stop being two columns: a 12rem
+   * label beside a wrapping value on a phone leaves both unreadable. */
+  @media (max-width: 32rem) {
+    .tl-dl[data-layout='grid'] {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: var(--_pair-gap);
+    }
+
+    /* The gap has to be reopened between pairs, and the element that ends a
+     * pair is the <dd> of every item but the last. It is selected through the
+     * item rather than as `.tl-dl__details:not(:last-child)`, because the <dd>
+     * is always the last child of its own wrapper — `display: contents` removes
+     * the wrapper's box, not its place in the tree, so that form matches
+     * nothing. */
+    .tl-dl[data-layout='grid'] .tl-dl__item:not(:last-child) .tl-dl__details {
+      margin-block-end: calc(var(--_row-gap) - var(--_pair-gap));
+    }
+
+    /* One column means the term sits directly above its own value, so the rule
+     * that separated the two columns' rows would now cut between a label and
+     * the thing it labels. Only the value closes a pair here. */
+    .tl-dl[data-divided][data-layout='grid'] .tl-dl__term {
+      padding-block-end: 0;
+      border-block-end: 0;
+    }
+
+    .tl-dl[data-layout='inline'] .tl-dl__details {
+      text-align: start;
+    }
+  }
+}

@@ -13,18 +13,21 @@ import (
 	"syscall"
 	"time"
 
+	"encoding/json"
 	"github.com/Tularity/t-lingual/internal/admin"
 	"github.com/Tularity/t-lingual/internal/api"
-	"github.com/Tularity/t-lingual/internal/asr"
 	"github.com/Tularity/t-lingual/internal/auth"
 	"github.com/Tularity/t-lingual/internal/config"
 	"github.com/Tularity/t-lingual/internal/control"
 	"github.com/Tularity/t-lingual/internal/live"
+	"github.com/Tularity/t-lingual/internal/media"
 	"github.com/Tularity/t-lingual/internal/processlock"
+	"github.com/Tularity/t-lingual/internal/providers"
+	"github.com/Tularity/t-lingual/internal/rooms"
 	"github.com/Tularity/t-lingual/internal/secret"
+	"github.com/Tularity/t-lingual/internal/sharing"
 	"github.com/Tularity/t-lingual/internal/spa"
 	"github.com/Tularity/t-lingual/internal/store"
-	"github.com/Tularity/t-lingual/internal/translate"
 	"github.com/Tularity/t-lingual/internal/webapi"
 	"github.com/Tularity/t-lingual/internal/workspace"
 )
@@ -73,6 +76,13 @@ func run(logger *slog.Logger) error {
 	if recoveredSessions > 0 || recoveredTranslations > 0 {
 		logger.Warn("recovered interrupted work", "sessions", recoveredSessions, "translations", recoveredTranslations)
 	}
+	archivedSessions, err := database.ArchiveInactiveInterpretations(context.Background(), now)
+	if err != nil {
+		return fmt.Errorf("archive inactive interpretations at startup: %w", err)
+	}
+	if archivedSessions > 0 {
+		logger.Info("archived inactive interpretations", "sessions", archivedSessions)
+	}
 
 	authService, err := auth.New(cfg, database, keyring)
 	if err != nil {
@@ -87,38 +97,48 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	var asrProvider asr.Provider
-	if cfg.ASR.Enabled() {
-		asrProvider, err = asr.NewClient(cfg.ASR.BaseURL, cfg.ASR.APIKey, nil)
-		if err != nil {
+	registry, err := providers.New(cfg)
+	if err != nil {
+		return err
+	}
+	if data, loadErr := database.ProviderSettings(context.Background()); loadErr == nil {
+		var endpoints providers.Endpoints
+		if err := json.Unmarshal(data, &endpoints); err != nil {
+			return fmt.Errorf("read saved provider settings: %w", err)
+		}
+		if _, err := registry.Update(endpoints); err != nil {
 			return err
 		}
+	} else if !errors.Is(loadErr, store.ErrNotFound) {
+		return loadErr
 	}
-	var translationProvider translate.Provider
-	if cfg.Translator.Enabled() {
-		translationProvider, err = translate.NewClient(cfg.Translator.BaseURL, cfg.Translator.APIKey, nil)
-		if err != nil {
-			return err
-		}
+	mediaService, err := media.New(database, database.DataRoot())
+	if err != nil {
+		return err
 	}
-
+	if err := mediaService.RecoverTrash(context.Background()); err != nil {
+		return err
+	}
+	sharingService, err := sharing.New(database, keyring)
+	if err != nil {
+		return err
+	}
+	liveService, err := rooms.New(database, sharingService, registry, logger)
+	if err != nil {
+		return err
+	}
+	snapshot := registry.Snapshot()
+	asrProvider, translationProvider := snapshot.ASR, snapshot.Translator
 	rootContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
-	var liveService *live.Manager
-	if asrProvider != nil {
-		liveService, err = live.New(rootContext, database, asrProvider, translationProvider, logger)
-		if err != nil {
-			return err
-		}
-	}
-	if err := authService.ConfigureUserRevoker(optionalAuthUserRevoker(liveService)); err != nil {
-		return fmt.Errorf("configure authentication live revocation: %w", err)
+	if err := authService.ConfigureUserRevoker(liveService.RevokeUser); err != nil {
+		return err
 	}
 
 	applicationAPI, err := api.New(api.Dependencies{
 		Config: cfg, Store: database, Auth: authService, Admin: adminService,
 		Workspace: workspaceService, ASR: asrProvider, Translator: translationProvider,
-		Live: liveService, Logger: logger,
+		Live: liveService, Media: mediaService, Logger: logger, Providers: registry, Rooms: liveService, Sharing: sharingService,
 	})
 	if err != nil {
 		return err
@@ -130,7 +150,7 @@ func run(logger *slog.Logger) error {
 	rootHandler := newRootHTTPHandler(applicationAPI.Handler(), web)
 
 	adminServer, err := control.StartServer(
-		cfg.AdminSocket, adminService, optionalControlUserRevoker(liveService), cfg.MaxJSONBytes,
+		cfg.AdminSocket, adminService, liveService.RevokeUser, cfg.MaxJSONBytes,
 	)
 	if err != nil {
 		return err
@@ -182,11 +202,12 @@ func run(logger *slog.Logger) error {
 
 	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancelShutdown()
-	httpErr := httpServer.Shutdown(shutdownContext)
+	// Close SSE and WebSocket leases before waiting for HTTP handlers to drain.
 	var liveErr error
 	if liveService != nil {
 		liveErr = liveService.Shutdown(shutdownContext)
 	}
+	httpErr := httpServer.Shutdown(shutdownContext)
 	adminErr := adminServer.Shutdown(shutdownContext)
 	_, _, recoveryErr := database.RecoverInterruptedInterpretations(shutdownContext, time.Now().UTC())
 	shutdownErr := errors.Join(serveErr, httpErr, liveErr, adminErr, recoveryErr)
@@ -194,6 +215,15 @@ func run(logger *slog.Logger) error {
 		logger.Info("t-lingual stopped gracefully")
 	}
 	return shutdownErr
+}
+
+// Preserve a nil interface when ASR is not configured. A typed nil Manager
+// otherwise passes API nil checks and panics during logout or access revocation.
+func optionalLiveHandler(manager *live.Manager) api.LiveHandler {
+	if manager == nil {
+		return nil
+	}
+	return manager
 }
 
 func optionalControlUserRevoker(manager *live.Manager) control.RevokeUserFunc {
@@ -247,6 +277,9 @@ func isLiveWebSocketEndpoint(request *http.Request) bool {
 		return false
 	}
 	segments := strings.Split(strings.TrimPrefix(request.URL.Path, "/"), "/")
+	if len(segments) == 6 && segments[0] == "api" && segments[1] == "v1" && segments[2] == "view" && segments[3] == "sessions" && segments[4] != "" && (segments[5] == "events" || segments[5] == "record") {
+		return true
+	}
 	return len(segments) == 5 &&
 		segments[0] == "api" &&
 		segments[1] == "v1" &&
@@ -279,10 +312,16 @@ func maintain(ctx context.Context, database *store.Store, logger *slog.Logger) {
 		ceremonies, ceremonyErr := database.DeleteExpiredWebAuthnCeremonies(cleanupContext, now)
 		sessions, sessionErr := database.DeleteExpiredBrowserSessions(cleanupContext, now)
 		grants, grantErr := database.DeleteExpiredActionGrants(cleanupContext, now)
+		archived, archiveErr := database.ArchiveInactiveInterpretations(cleanupContext, now)
 		if err := errors.Join(ceremonyErr, sessionErr, grantErr); err != nil && ctx.Err() == nil {
 			logger.Error("delete expired authentication state", "error", err)
 		} else if ceremonies+sessions+grants > 0 {
 			logger.Info("deleted expired authentication state", "ceremonies", ceremonies, "sessions", sessions, "grants", grants)
+		}
+		if archiveErr != nil && ctx.Err() == nil {
+			logger.Error("archive inactive interpretations", "error", archiveErr)
+		} else if archived > 0 {
+			logger.Info("archived inactive interpretations", "sessions", archived)
 		}
 	}
 	cleanup()

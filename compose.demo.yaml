@@ -1,0 +1,15 @@
+name: t-lingual-demo
+services:
+  demo:
+    container_name: t-lingual-demo
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+      network: host
+    ports:
+      - "127.0.0.1:5181:5173"
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+# Uses the host's approved 10.x default address pool. No subnet override.

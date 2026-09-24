@@ -1,0 +1,175 @@
+@layer tl.components {
+  .tl-panel {
+    --_bg: var(--tl-surface);
+    --_fg: var(--tl-text);
+    --_border: var(--tl-border-subtle);
+    --_shadow: var(--tl-elevation-xs);
+    --_pad: var(--tl-space-10);
+    --_radius: var(--tl-radius-lg);
+
+    display: block;
+    min-width: 0;
+
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--_radius);
+    box-shadow: var(--_shadow);
+  }
+
+  /* -- Padding ------------------------------------------------------------- */
+  .tl-panel[data-padding='none'] { --_pad: 0; }
+  .tl-panel[data-padding='sm']   { --_pad: var(--tl-space-6); }
+  .tl-panel[data-padding='md']   { --_pad: var(--tl-space-10); }
+  .tl-panel[data-padding='lg']   { --_pad: var(--tl-space-12); }
+
+  /* -- Variants ------------------------------------------------------------ */
+  .tl-panel[data-variant='sunken'] {
+    --_bg: var(--tl-surface-sunken);
+    --_border: transparent;
+    --_shadow: none;
+  }
+
+  .tl-panel[data-variant='outline'] {
+    --_bg: transparent;
+    --_border: var(--tl-border);
+    --_shadow: none;
+  }
+
+  /* `plain` is the panel reduced to its header semantics: a titled group with
+   * no surface of its own, for sections that sit directly on the page. */
+  .tl-panel[data-variant='plain'] {
+    --_bg: transparent;
+    --_border: transparent;
+    --_shadow: none;
+    --_radius: 0;
+  }
+
+  /* -- Header --------------------------------------------------------------- */
+  .tl-panel__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--tl-space-6);
+    /* The header wraps before the actions get crushed. At 360px a title plus
+     * two buttons does not fit on one line, and the alternative to wrapping is
+     * a truncated title or an action pushed off the edge. */
+    flex-wrap: wrap;
+    padding: var(--_pad);
+  }
+
+  .tl-panel__heading {
+    /* The growing, shrinkable side of the header. Without the zero basis the
+     * heading refuses to shrink below its longest word and forces the actions
+     * onto their own line far earlier than needed. */
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+
+  .tl-panel__title {
+    margin: 0;
+    font-size: var(--tl-text-lg);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-snug);
+    letter-spacing: var(--tl-tracking-tight);
+    color: var(--tl-text);
+  }
+
+  .tl-panel__description {
+    margin: var(--tl-space-2) 0 0;
+    font-size: var(--tl-text-sm);
+    font-weight: var(--tl-weight-regular);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-panel__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--tl-space-4);
+    flex: none;
+  }
+
+  /* -- Disclosure trigger ---------------------------------------------------
+   * A button reset rather than a styled button: this is a heading that happens
+   * to be pressable, so it inherits the heading's type and only picks up the
+   * interaction affordances. */
+  .tl-panel__trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--tl-space-4);
+    width: 100%;
+    margin: 0;
+    padding: 0;
+
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+
+    background: none;
+    border: 0;
+    border-radius: var(--tl-radius-sm);
+    cursor: pointer;
+  }
+
+  .tl-panel__trigger:hover .tl-panel__title-text {
+    color: var(--tl-text-accent);
+  }
+
+  .tl-panel__title-text {
+    min-width: 0;
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-panel__chevron {
+    flex: none;
+    color: var(--tl-text-muted);
+    /* Rotating a right-pointing chevron rather than swapping glyphs keeps the
+     * marker's optical weight identical in both states, and the rotation is the
+     * one piece of motion here that carries meaning. It is movement, so it takes
+     * the signature curve; a rotation has no distance to collapse, so under
+     * reduced motion it simply runs at half the duration and the open state
+     * stays legible. */
+    rotate: 0deg;
+    transition: rotate var(--tl-duration-sm) var(--tl-ease-signature);
+  }
+
+  .tl-panel[data-state='open'] .tl-panel__chevron {
+    rotate: 90deg;
+  }
+
+  /* -- Content --------------------------------------------------------------
+   * The `[hidden]` guard is not redundant. `hidden` is a UA-level
+   * `display: none`, and any author rule that sets `display` on the same
+   * element beats it outright — the classic way a "hidden" region stays visible
+   * and focusable. Matching on the attribute keeps this specific enough to win
+   * without `!important`. */
+  .tl-panel__content {
+    display: block;
+  }
+
+  .tl-panel__content[hidden] {
+    display: none;
+  }
+
+  .tl-panel__body {
+    min-width: 0;
+    padding: 0 var(--_pad) var(--_pad);
+  }
+
+  .tl-panel__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tl-space-6);
+    padding: var(--tl-space-6) var(--_pad);
+    border-block-start: 1px solid var(--tl-divider);
+  }
+
+  @media (forced-colors: active) {
+    .tl-panel {
+      border-color: CanvasText;
+    }
+  }
+}

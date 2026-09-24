@@ -1,0 +1,240 @@
+@layer tl.components {
+  .tl-dialog {
+    --_inset: var(--tl-space-8);
+    --_width: 520px;
+
+    position: fixed;
+    inset: 0;
+    z-index: var(--tl-z-overlay);
+    display: grid;
+    place-items: center;
+    padding: var(--_inset);
+  }
+
+  /* A dialog on its way out must stop intercepting pointer events immediately.
+   * Otherwise the overlay spends its whole exit transition swallowing clicks
+   * aimed at the page it is uncovering, which reads as a frozen UI. */
+  .tl-dialog[data-state='exiting'] {
+    pointer-events: none;
+  }
+
+  /* -- Scrim -----------------------------------------------------------------
+   * A separate element rather than a background on the overlay, so its fade is
+   * independent of the panel's zoom. It uses the overlay pair, whose opacity leg
+   * is deliberately shorter than the transform leg. */
+  .tl-dialog__scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--tl-scrim);
+    opacity: 1;
+    transition: var(--tl-transition-overlay-enter);
+  }
+
+  @starting-style {
+    .tl-dialog__scrim[data-state='entering'] {
+      opacity: 0;
+    }
+  }
+
+  .tl-dialog__scrim[data-state='exiting'] {
+    opacity: 0;
+    transition: var(--tl-transition-overlay-exit);
+  }
+
+  /* -- Panel ------------------------------------------------------------------ */
+  .tl-dialog__panel {
+    /* Written from JS at open time, in px, as the offset from the centre of the
+     * viewport to the control that opened the dialog. Multiplied through
+     * --tl-motion-distance so reduced motion drops the travel to zero while the
+     * fade survives. */
+    --_origin-x: 0px;
+    --_origin-y: 0px;
+    --_tx: calc(var(--_origin-x) * var(--tl-motion-distance));
+    --_ty: calc(var(--_origin-y) * var(--tl-motion-distance));
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: var(--_width);
+    /* dvh rather than vh: on mobile Safari, 100vh is the height with the URL
+     * bar retracted, so a full-height dialog is taller than the screen and its
+     * footer buttons sit under the browser chrome. */
+    max-height: calc(100dvh - var(--_inset) * 2);
+
+    background: var(--tl-surface-elevated);
+    color: var(--tl-text);
+    border: 1px solid var(--tl-overlay-border);
+    border-radius: var(--tl-radius-lg);
+    box-shadow: var(--tl-elevation-lg);
+    overflow: hidden;
+
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+    transition: var(--tl-transition-overlay-enter);
+  }
+
+  /* The signature entrance: the panel starts at the origin point, scaled right
+   * down, and grows into place. Scaling about its own centre after translating
+   * to the origin puts the miniature panel exactly on the control that opened
+   * it, which is what sells the connection. */
+  @starting-style {
+    .tl-dialog__panel[data-state='entering'] {
+      opacity: 0;
+      transform: translate(var(--_tx), var(--_ty)) scale(var(--tl-zoom-modal));
+    }
+  }
+
+  /* The exit replays the entrance in reverse, to the same frozen origin, so the
+   * panel collapses back into the control it came from. Focus has already been
+   * returned by the time this state is reached; only the pointer is left to
+   * neutralise. */
+  .tl-dialog__panel[data-state='exiting'] {
+    opacity: 0;
+    transform: translate(var(--_tx), var(--_ty)) scale(var(--tl-zoom-modal));
+    transition: var(--tl-transition-overlay-exit);
+    pointer-events: none;
+  }
+
+  /* The panel takes focus on open so its accessible name is announced, but it
+   * is a landing zone rather than an operable control — a ring around the whole
+   * dialog would be noise, and the scrim already says which surface is live. */
+  .tl-dialog__panel:focus-visible {
+    outline: none;
+  }
+
+  /* -- Size ------------------------------------------------------------------ */
+  .tl-dialog[data-size='sm'] { --_width: 400px; }
+  .tl-dialog[data-size='md'] { --_width: 520px; }
+  .tl-dialog[data-size='lg'] { --_width: 780px; }
+  .tl-dialog[data-size='full'] {
+    --_width: none;
+  }
+  .tl-dialog[data-size='full'] .tl-dialog__panel {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+  }
+
+  /* -- Header ---------------------------------------------------------------- */
+  .tl-dialog__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-6);
+    flex: none;
+    padding: var(--tl-space-9) var(--tl-space-9) var(--tl-space-6);
+  }
+
+  .tl-dialog__heading {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-2);
+  }
+
+  .tl-dialog__title {
+    margin: 0;
+    font-size: var(--tl-text-lg);
+    font-weight: var(--tl-weight-semibold);
+    line-height: var(--tl-leading-tight);
+    letter-spacing: var(--tl-tracking-tight);
+    color: var(--tl-text);
+  }
+
+  .tl-dialog__description {
+    margin: 0;
+    font-size: var(--tl-text-sm);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-dialog__close {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    /* Pulled out of the padding box so the glyph optically aligns with the
+     * title's cap height and the panel's inner corner, while the 28px hit area
+     * stays comfortably over the 24x24 floor of WCAG 2.2 SC 2.5.8. */
+    margin: -2px -4px 0 0;
+    padding: 0;
+    color: var(--tl-text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--tl-radius-sm);
+    cursor: pointer;
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-dialog__close:hover {
+    color: var(--tl-text);
+    background: var(--tl-surface-hover);
+  }
+
+  .tl-dialog__close:active {
+    background: var(--tl-surface-active);
+  }
+
+  /* -- Body ------------------------------------------------------------------ */
+  .tl-dialog__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* Stops a flick inside the dialog from chaining into the page behind it
+     * once the list hits its end — the lock on <body> does not cover this. */
+    overscroll-behavior: contain;
+    padding: 0 var(--tl-space-9);
+    font-size: var(--tl-text-md);
+    line-height: var(--tl-leading-normal);
+    color: var(--tl-text-secondary);
+    scrollbar-width: thin;
+    scrollbar-color: var(--tl-border-strong) transparent;
+  }
+
+  /* A header or footer that is absent should not leave the body flush against
+   * the panel edge. */
+  .tl-dialog__body:first-child { padding-top: var(--tl-space-9); }
+  .tl-dialog__body:last-child { padding-bottom: var(--tl-space-9); }
+
+  /* -- Footer ---------------------------------------------------------------- */
+  .tl-dialog__footer {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--tl-space-4);
+    padding: var(--tl-space-8) var(--tl-space-9) var(--tl-space-9);
+  }
+
+  /* Narrow viewports: buttons stack full width so a thumb cannot miss, and the
+   * primary action stays last in the DOM but first under the thumb. */
+  @media (max-width: 30rem) {
+    .tl-dialog {
+      --_inset: var(--tl-space-4);
+    }
+    .tl-dialog__footer {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+  }
+
+  /* The panel is separated from the page by a scrim colour and a shadow, and
+   * forced colors removes both. Without a border the dialog and the page merge
+   * into one flat surface; the scrim has to become a real opaque surface too. */
+  @media (forced-colors: active) {
+    .tl-dialog__panel {
+      border-color: CanvasText;
+      border-width: 2px;
+    }
+    .tl-dialog__scrim {
+      background: Canvas;
+    }
+    .tl-dialog__close {
+      border-color: currentColor;
+    }
+  }
+}

@@ -1,0 +1,69 @@
+@layer tl.components {
+  .tl-button-group {
+    display: inline-flex;
+    /* `stretch` rather than `center` so a taller button in the row does not
+     * leave its neighbours floating with a gap above and below the seam. */
+    align-items: stretch;
+    vertical-align: middle;
+  }
+
+  .tl-button-group[data-orientation='vertical'] {
+    flex-direction: column;
+  }
+
+  .tl-button-group:not([data-attached]) {
+    gap: var(--tl-space-4);
+  }
+
+  /* Every child gets a stacking position, because the negative margin below
+   * makes adjacent borders overlap by the 1px they share. Without this, the
+   * hovered button's border and its focus ring paint underneath the neighbour
+   * that happens to come later in the DOM, and the ring looks clipped on one
+   * side only. `:focus-within` is here as well as `:focus-visible` so a button
+   * rendered through a wrapper still raises the group. */
+  .tl-button-group[data-attached] > * {
+    position: relative;
+    z-index: var(--tl-z-base);
+  }
+
+  .tl-button-group[data-attached] > *:hover,
+  .tl-button-group[data-attached] > *:focus-visible,
+  .tl-button-group[data-attached] > *:focus-within {
+    z-index: var(--tl-z-raised);
+  }
+
+  /* -- Seam ----------------------------------------------------------------
+   * The attribute on the left of each selector is not decoration: it lifts the
+   * specificity above `.tl-button[data-variant='link']`, which sets its own
+   * radius, so the corner rules win regardless of which stylesheet the bundler
+   * happens to emit first inside this layer. */
+  .tl-button-group[data-orientation='horizontal'][data-attached] > *:not(:first-child) {
+    margin-inline-start: -1px;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
+
+  .tl-button-group[data-orientation='horizontal'][data-attached] > *:not(:last-child) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  .tl-button-group[data-orientation='vertical'][data-attached] > *:not(:first-child) {
+    margin-block-start: -1px;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+  }
+
+  .tl-button-group[data-orientation='vertical'][data-attached] > *:not(:last-child) {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  /* Logical corner properties throughout, so the group flips with the document
+   * in an RTL locale without a mirrored copy of every rule. A lone child is
+   * both first and last, so it keeps all four corners with no special case. */
+
+  /* Under forced colors Button already promotes its border to `currentColor`,
+   * which means the collapsed seam stays a single visible hairline rather than
+   * two stacked ones. Nothing to add here — the overlap is what does it. */
+}

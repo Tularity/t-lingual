@@ -1,0 +1,87 @@
+/* ---------------------------------------------------------------------------
+ * BASE
+ *
+ * Document-level defaults and the shared focus treatment. Everything here is
+ * scoped so it can only affect elements the framework owns or that opt in —
+ * importing this package must not restyle an app's existing markup.
+ * ------------------------------------------------------------------------- */
+@layer tl.base {
+  /* -- Focus --------------------------------------------------------------
+   * One ring, defined once, applied to every focusable thing the framework
+   * renders. `:focus-visible` rather than `:focus` so a mouse click on a
+   * button does not leave a ring behind, while keyboard and assistive-tech
+   * navigation always shows one.
+   *
+   * `outline` rather than `box-shadow`: an outline follows border-radius in
+   * every current engine, is not clipped by an ancestor's `overflow: hidden`,
+   * and — unlike box-shadow — survives `forced-colors: active`, where a
+   * shadow-based ring disappears completely. */
+  [data-tl]:focus-visible,
+  [data-tl] :focus-visible {
+    outline: var(--tl-focus-width) solid var(--tl-focus-ring);
+    outline-offset: var(--tl-focus-offset);
+    border-radius: inherit;
+  }
+
+  /* An element that manages roving focus internally (tablist, menu, listbox)
+   * opts out of the automatic ring and draws its own selected state. */
+  [data-tl][data-focus-ring='none']:focus-visible {
+    outline: none;
+  }
+
+  /* -- Document opt-in -----------------------------------------------------
+   * Applied by the app to <body> (or any wrapper). Not applied to :root
+   * automatically — a library that restyles the host document without being
+   * asked is a library that cannot be adopted incrementally. */
+  .tl-root {
+    color: var(--tl-text);
+    background-color: var(--tl-bg);
+    font-family: var(--tl-font-sans);
+    font-size: var(--tl-text-md);
+    line-height: var(--tl-leading-normal);
+    letter-spacing: var(--tl-tracking-normal);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Warm bloom in the top-left, carried over from the established identity.
+     * `color-mix` keeps it tied to the accent token rather than hard-coding a
+     * second copy of the brand colour. */
+    background-image: radial-gradient(
+      circle at 7% -10%,
+      color-mix(in oklab, var(--tl-accent) 15%, transparent) 0,
+      transparent 32rem
+    );
+    background-attachment: fixed;
+  }
+
+  /* Text selection picks up the brand rather than the UA blue. */
+  .tl-root ::selection {
+    background-color: color-mix(in oklab, var(--tl-accent) 40%, transparent);
+    color: var(--tl-text);
+  }
+
+  /* -- Scrollbars ----------------------------------------------------------
+   * Thin and tinted, so a dense transcript pane does not get a heavy grey
+   * gutter down the middle of the layout. Colours come from tokens, so the
+   * dark theme is handled without a second rule. */
+  .tl-root {
+    scrollbar-width: thin;
+    scrollbar-color: var(--tl-border-strong) transparent;
+  }
+
+  /* -- Utility -------------------------------------------------------------
+   * Visually hidden, kept in the base layer so `VisuallyHidden` and any
+   * component that needs an accessible-only label share one implementation.
+   * `clip-path` alone is not enough: Safari still exposes a zero-size element
+   * to some AT as empty, which is why the 1px box and negative margin stay. */
+  .tl-visually-hidden:not(:focus):not(:active) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}

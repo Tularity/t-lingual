@@ -1,12 +1,14 @@
 package translate
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -67,10 +69,17 @@ func (c *Client) Ready(ctx context.Context) error {
 	if response.StatusCode != http.StatusOK {
 		return decodeError(response)
 	}
+	reader := bufio.NewReader(response.Body)
+	if _, err := reader.Peek(1); errors.Is(err, io.EOF) {
+		// The GPU gateway signals readiness with an exact empty 200 response.
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("read translation health response: %w", err)
+	}
 	var health struct {
 		Status string `json:"status"`
 	}
-	if err := decodeStrict(response.Body, &health); err != nil {
+	if err := decodeStrict(reader, &health); err != nil {
 		return fmt.Errorf("decode translation health response: %w", err)
 	}
 	if health.Status != "ready" {
@@ -80,6 +89,12 @@ func (c *Client) Ready(ctx context.Context) error {
 }
 
 func (c *Client) Translate(ctx context.Context, input Request) (Response, error) {
+	if input.SourceLanguage == "" {
+		// The gateway treats an omitted source identically to exact lowercase auto.
+		// Send the explicit sentinel so this adapter's request/response binding
+		// remains unambiguous even when the caller leaves the field empty.
+		input.SourceLanguage = "auto"
+	}
 	if err := validateRequest(input); err != nil {
 		return Response{}, err
 	}
@@ -114,10 +129,10 @@ func (c *Client) Translate(ctx context.Context, input Request) (Response, error)
 }
 
 func validateRequest(input Request) error {
-	source, sourceErr := language.Canonicalize(input.SourceLanguage)
+	_, sourceErr := canonicalSource(input.SourceLanguage)
 	target, targetErr := language.Canonicalize(input.TargetLanguage)
-	if sourceErr != nil || targetErr != nil || source == target {
-		return errors.New("source and target language tags must be different supported languages")
+	if sourceErr != nil || targetErr != nil || target == "" {
+		return errors.New("source and target language tags must be supported languages")
 	}
 	if !utf8.ValidString(input.Text) || strings.TrimSpace(input.Text) == "" {
 		return errors.New("translation text must be non-empty UTF-8")
@@ -135,16 +150,38 @@ func validateRequest(input Request) error {
 	if count > 4096 {
 		return errors.New("translation text exceeds the provider character limit")
 	}
+	if err := validateSourceContext(input); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSourceContext(input Request) error {
+	if input.SourceContext == "" {
+		return nil
+	}
+	if input.SourceLanguage != "auto" || utf8.RuneCountInString(input.Text) > 32 ||
+		len(input.SourceContext) > 512 || !validProviderText(input.SourceContext) {
+		return errors.New("source context requires short auto-detected text and at most 512 valid UTF-8 bytes")
+	}
 	return nil
 }
 
 func validateResponse(input Request, result Response) error {
-	expectedSource, _ := language.Canonicalize(input.SourceLanguage)
+	expectedSource, _ := canonicalSource(input.SourceLanguage)
 	expectedTarget, _ := language.Canonicalize(input.TargetLanguage)
 	actualSource, sourceErr := language.Canonicalize(result.SourceLanguage)
 	actualTarget, targetErr := language.Canonicalize(result.TargetLanguage)
-	if sourceErr != nil || targetErr != nil || actualSource != expectedSource || actualTarget != expectedTarget {
+	if sourceErr != nil || targetErr != nil ||
+		(expectedSource != "auto" && actualSource != expectedSource) || actualTarget != expectedTarget {
 		return errors.New("translation response language identity did not match the request")
+	}
+	if expectedSource == "auto" {
+		if result.SourceDetection == nil || !validSourceDetection(*result.SourceDetection, input.SourceContext != "") {
+			return errors.New("translation response source detection is invalid")
+		}
+	} else if result.SourceDetection != nil {
+		return errors.New("explicit source translation reported auto detection")
 	}
 	if len(result.RequestID) > 256 || len(result.Model) > 256 || !safeASCII(result.RequestID) || !safeASCII(result.Model) {
 		return errors.New("translation response identity is invalid")
@@ -156,6 +193,19 @@ func validateResponse(input Request, result Response) error {
 		return errors.New("translation response usage is invalid")
 	}
 	return nil
+}
+
+func validSourceDetection(value SourceDetection, contextUsed bool) bool {
+	return value.Method == "fasttext-lid.176" && !math.IsNaN(value.Confidence) && !math.IsInf(value.Confidence, 0) &&
+		value.Confidence >= 0 && value.Confidence <= 1 && value.Rank >= 1 && value.Rank <= 46 &&
+		value.ContextUsed == contextUsed && (!contextUsed || value.Uncertain)
+}
+
+func canonicalSource(value string) (string, error) {
+	if value == "" {
+		return "auto", nil
+	}
+	return language.CanonicalizeSource(value)
 }
 
 func validProviderText(value string) bool {

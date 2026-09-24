@@ -1,0 +1,107 @@
+@layer tl.components {
+  .tl-code {
+    --_bg: var(--tl-code-bg);
+    --_fg: var(--tl-text);
+
+    padding: 0.12em var(--tl-space-2);
+    font-family: var(--tl-font-mono);
+    /* Monospace faces run optically larger than the sans at the same size, so
+     * inline code is stepped down to sit level with the text around it rather
+     * than bulging out of the line. */
+    font-size: 0.9em;
+    color: var(--_fg);
+    background: var(--_bg);
+    border-radius: var(--tl-radius-xs);
+    overflow-wrap: anywhere;
+  }
+
+  /* -- Block ---------------------------------------------------------------- */
+  .tl-code-block {
+    --_bg: var(--tl-code-bg);
+    --_fg: var(--tl-text);
+    --_border: var(--tl-border-subtle);
+    --_pad: var(--tl-space-8);
+    --_leading: var(--tl-leading-normal);
+
+    display: block;
+    overflow: hidden;
+    color: var(--_fg);
+    background: var(--_bg);
+    border: 1px solid var(--_border);
+    border-radius: var(--tl-radius-md);
+  }
+
+  .tl-code-block__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--tl-space-6);
+
+    padding: var(--tl-space-3) var(--_pad);
+    font-size: var(--tl-text-xs);
+    color: var(--tl-text-muted);
+    background: var(--tl-surface);
+    border-block-end: 1px solid var(--_border);
+  }
+
+  .tl-code-block__filename {
+    font-family: var(--tl-font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tl-code-block__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tl-space-2);
+    flex: none;
+  }
+
+  .tl-code-block__pre {
+    margin: 0;
+    padding: var(--_pad);
+    font-family: var(--tl-font-mono);
+    font-size: var(--tl-text-sm);
+    line-height: var(--_leading);
+    tab-size: 2;
+    overflow: auto;
+  }
+
+  .tl-code-block[data-wrap] .tl-code-block__pre {
+    /* `pre-wrap` rather than `pre`: leading indentation is preserved, which is
+     * the whole point of the element, but a 400-character JSON body still folds
+     * instead of scrolling out of the panel. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* The clamp is expressed in lines rather than pixels so it stays right when
+   * the user changes their text size — a fixed max-height cuts a line in half
+   * as soon as the type grows. */
+  .tl-code-block__pre[data-clamped] {
+    max-height: calc(
+      var(--_max-lines, 12) * var(--_leading) * 1em + var(--_pad) * 2
+    );
+  }
+
+  .tl-code-block__code {
+    display: block;
+    font: inherit;
+    color: inherit;
+    background: none;
+    padding: 0;
+  }
+
+  /* The block is distinguished from the page by a background tint, which forced
+   * colors strips; the border is what keeps it identifiable as a block. */
+  @media (forced-colors: active) {
+    .tl-code-block {
+      border-color: CanvasText;
+    }
+
+    .tl-code {
+      border: 1px solid CanvasText;
+    }
+  }
+}

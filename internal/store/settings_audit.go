@@ -6,65 +6,132 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
-
 	"github.com/Tularity/t-lingual/internal/domain"
+	"github.com/Tularity/t-lingual/internal/language"
+	"time"
 )
 
 func (s *Store) GetUserSettings(ctx context.Context, userID string) (domain.UserSettings, error) {
 	var settings domain.UserSettings
-	var autoStart, showPartial, compact int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT user_id, default_source_language, default_target_language,
-			auto_start_microphone, show_partial_transcripts, compact_transcript_layout
-		FROM user_settings WHERE user_id = ?`, userID).Scan(
+	var autoStart, showPartial, compact, onboarding int
+	err := s.db.QueryRowContext(ctx, `SELECT user_id,default_source_language,default_target_language,
+ auto_start_microphone,show_partial_transcripts,compact_transcript_layout,auto_archive_hours,
+ interface_language,theme_preference,u.onboarding_complete FROM user_settings
+ JOIN users u ON u.id=user_settings.user_id WHERE user_settings.user_id=?`, userID).Scan(
 		&settings.UserID, &settings.DefaultSourceLanguage, &settings.DefaultTargetLanguage,
-		&autoStart, &showPartial, &compact,
-	)
+		&autoStart, &showPartial, &compact, &settings.AutoArchiveHours, &settings.InterfaceLanguage, &settings.ThemePreference, &onboarding)
 	if err == nil {
 		settings.AutoStartMicrophone = autoStart != 0
 		settings.ShowPartialTranscripts = showPartial != 0
 		settings.CompactTranscriptLayout = compact != 0
+		settings.OnboardingComplete = onboarding != 0
 		return settings, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return domain.UserSettings{}, fmt.Errorf("store: get user settings: %w", err)
 	}
-
-	var exists int
-	err = s.db.QueryRowContext(ctx, "SELECT 1 FROM users WHERE id = ?", userID).Scan(&exists)
+	err = s.db.QueryRowContext(ctx, "SELECT onboarding_complete FROM users WHERE id = ?", userID).Scan(&onboarding)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.UserSettings{}, ErrNotFound
 	}
 	if err != nil {
 		return domain.UserSettings{}, fmt.Errorf("store: verify settings user: %w", err)
 	}
-	return domain.DefaultUserSettings(userID), nil
+	defaults := domain.DefaultUserSettings(userID)
+	defaults.OnboardingComplete = onboarding != 0
+	return defaults, nil
 }
-
 func (s *Store) UpsertUserSettings(ctx context.Context, settings domain.UserSettings) error {
-	if settings.UserID == "" || settings.DefaultSourceLanguage == "" || settings.DefaultTargetLanguage == "" {
-		return errors.New("store: settings user and languages are required")
+	writeInterface := settings.InterfaceLanguage != ""
+	writeTheme := settings.ThemePreference != ""
+	if settings.InterfaceLanguage == "" {
+		settings.InterfaceLanguage = "system"
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_settings(
-			user_id, default_source_language, default_target_language,
-			auto_start_microphone, show_partial_transcripts, compact_transcript_layout
-		) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(user_id) DO UPDATE SET
-			default_source_language = excluded.default_source_language,
-			default_target_language = excluded.default_target_language,
-			auto_start_microphone = excluded.auto_start_microphone,
-			show_partial_transcripts = excluded.show_partial_transcripts,
-			compact_transcript_layout = excluded.compact_transcript_layout`,
+	if settings.ThemePreference == "" {
+		settings.ThemePreference = "system"
+	}
+	if settings.UserID == "" || settings.DefaultSourceLanguage == "" || settings.DefaultTargetLanguage == "" ||
+		settings.AutoArchiveHours < 0 || settings.AutoArchiveHours > 8760 ||
+		!language.ValidInterface(settings.InterfaceLanguage) ||
+		(settings.ThemePreference != "system" && settings.ThemePreference != "light" && settings.ThemePreference != "dark") {
+		return errors.New("store: invalid user settings")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin settings update: %w", err)
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO user_settings(user_id,default_source_language,default_target_language,
+ auto_start_microphone,show_partial_transcripts,compact_transcript_layout,auto_archive_hours,interface_language,theme_preference)
+ VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+ default_source_language=excluded.default_source_language,default_target_language=excluded.default_target_language,
+ auto_start_microphone=excluded.auto_start_microphone,show_partial_transcripts=excluded.show_partial_transcripts,
+ compact_transcript_layout=excluded.compact_transcript_layout,auto_archive_hours=excluded.auto_archive_hours,
+ interface_language=CASE WHEN ? THEN excluded.interface_language ELSE user_settings.interface_language END,
+ theme_preference=CASE WHEN ? THEN excluded.theme_preference ELSE user_settings.theme_preference END`,
 		settings.UserID, settings.DefaultSourceLanguage, settings.DefaultTargetLanguage,
-		boolInt(settings.AutoStartMicrophone), boolInt(settings.ShowPartialTranscripts),
-		boolInt(settings.CompactTranscriptLayout),
-	)
+		boolInt(settings.AutoStartMicrophone), boolInt(settings.ShowPartialTranscripts), boolInt(settings.CompactTranscriptLayout),
+		settings.AutoArchiveHours, settings.InterfaceLanguage, settings.ThemePreference,
+		boolInt(writeInterface), boolInt(writeTheme))
 	if err != nil {
 		return fmt.Errorf("store: upsert user settings: %w", mapSQLError(err))
 	}
+	result, err := tx.ExecContext(ctx, `UPDATE users SET onboarding_complete=MAX(onboarding_complete,?) WHERE id=?`,
+		boolInt(settings.OnboardingComplete), settings.UserID)
+	if err := requireAffected(result, err, "update user onboarding"); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit settings update: %w", err)
+	}
 	return nil
+}
+
+// PatchUserInterfaceSettings modifies only the two presentation preferences.
+// It never writes stale transcript, recognition, or onboarding values from a
+// concurrent whole-settings form or quick-setup completion.
+func (s *Store) PatchUserInterfaceSettings(ctx context.Context, userID string,
+	interfaceLanguage, themePreference *string) (domain.UserSettings, error) {
+	if userID == "" || (interfaceLanguage == nil && themePreference == nil) ||
+		(interfaceLanguage != nil && !language.ValidInterface(*interfaceLanguage)) ||
+		(themePreference != nil && *themePreference != "system" && *themePreference != "light" && *themePreference != "dark") {
+		return domain.UserSettings{}, errors.New("store: invalid interface preferences")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.UserSettings{}, fmt.Errorf("store: begin interface preference patch: %w", err)
+	}
+	defer tx.Rollback()
+	var owned int
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id=?`, userID).Scan(&owned); err != nil {
+		return domain.UserSettings{}, mapSQLError(err)
+	}
+	defaults := domain.DefaultUserSettings(userID)
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO user_settings(user_id,default_source_language,
+		default_target_language,auto_start_microphone,show_partial_transcripts,compact_transcript_layout,
+		auto_archive_hours,interface_language,theme_preference) VALUES(?,?,?,?,?,?,?,?,?)`,
+		userID, defaults.DefaultSourceLanguage, defaults.DefaultTargetLanguage,
+		boolInt(defaults.AutoStartMicrophone), boolInt(defaults.ShowPartialTranscripts),
+		boolInt(defaults.CompactTranscriptLayout), defaults.AutoArchiveHours,
+		defaults.InterfaceLanguage, defaults.ThemePreference); err != nil {
+		return domain.UserSettings{}, fmt.Errorf("store: initialize interface preferences: %w", mapSQLError(err))
+	}
+	var nextLanguage, nextTheme any
+	if interfaceLanguage != nil {
+		nextLanguage = *interfaceLanguage
+	}
+	if themePreference != nil {
+		nextTheme = *themePreference
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE user_settings SET
+		interface_language=COALESCE(?,interface_language), theme_preference=COALESCE(?,theme_preference)
+		WHERE user_id=?`, nextLanguage, nextTheme, userID); err != nil {
+		return domain.UserSettings{}, fmt.Errorf("store: patch interface preferences: %w", mapSQLError(err))
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.UserSettings{}, fmt.Errorf("store: commit interface preferences: %w", err)
+	}
+	return s.GetUserSettings(ctx, userID)
 }
 
 type AuditEvent struct {

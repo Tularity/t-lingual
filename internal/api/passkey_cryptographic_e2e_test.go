@@ -108,6 +108,9 @@ func TestPasskeyCryptographicRegistrationLogoutAndLogin(t *testing.T) {
 		t.Fatalf("finish registration response %d: %s", registrationFinish.Code, registrationFinish.Body.String())
 	}
 	registered := decodePasskeyFinish(t, registrationFinish)
+	if registered.OnboardingComplete == nil || *registered.OnboardingComplete {
+		t.Fatalf("new registration omitted pending onboarding state: %#v", registered.OnboardingComplete)
+	}
 	if registered.User.Username != "crypto-user" || registered.User.Role != domain.RoleUser || registered.User.Status != domain.UserActive {
 		t.Fatalf("unexpected registered user: %#v", registered.User)
 	}
@@ -198,6 +201,9 @@ func TestPasskeyCryptographicRegistrationLogoutAndLogin(t *testing.T) {
 		t.Fatalf("finish login response %d: %s", loginFinish.Code, loginFinish.Body.String())
 	}
 	loggedIn := decodePasskeyFinish(t, loginFinish)
+	if loggedIn.OnboardingComplete == nil || *loggedIn.OnboardingComplete {
+		t.Fatalf("passkey login omitted pending onboarding state: %#v", loggedIn.OnboardingComplete)
+	}
 	if loggedIn.User.ID != registered.User.ID || loggedIn.User.Username != registered.User.Username {
 		t.Fatalf("discoverable login returned a different user: registered=%#v loggedIn=%#v", registered.User, loggedIn.User)
 	}
@@ -255,8 +261,9 @@ func decodePasskeyBegin(t *testing.T, response *httptest.ResponseRecorder) passk
 }
 
 type passkeyE2EFinishResponse struct {
-	User    domain.User `json:"user"`
-	Session struct {
+	User               domain.User `json:"user"`
+	OnboardingComplete *bool       `json:"onboardingComplete"`
+	Session            struct {
 		ExpiresAt time.Time `json:"expiresAt"`
 	} `json:"session"`
 }

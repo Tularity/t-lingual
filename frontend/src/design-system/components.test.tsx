@@ -45,7 +45,7 @@ describe('design-system keyboard behaviour', () => {
     const { rerender } = render(<Textarea label="Notes" hint="Keep this concise." />)
     const textarea = screen.getByRole('textbox', { name: 'Notes' })
     const hint = screen.getByText('Keep this concise.')
-    expect(textarea).toHaveAttribute('aria-describedby', hint.id)
+    expect(textarea.getAttribute('aria-describedby')?.split(' ')).toContain(hint.id)
 
     rerender(<Textarea label="Notes" error="Notes are required." />)
     const error = screen.getByText('Notes are required.')

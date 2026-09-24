@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tularity/t-lingual/internal/config"
+	"github.com/Tularity/t-lingual/internal/store"
 )
 
 func TestClientAddressOnlyTrustsConfiguredProxyChain(t *testing.T) {
@@ -80,5 +81,29 @@ func TestPerClientRejectionDoesNotConsumeGlobalAuthBudget(t *testing.T) {
 	}
 	if err := server.rateLimitAuth(httptest.NewRecorder(), request("192.0.2.1:1002"), authRegistration); err == nil {
 		t.Fatal("registration unexpectedly bypassed the exhausted global budget")
+	}
+}
+
+func TestSiteCodeBudgetRetainsIndependentGlobalCapAcrossTrustedProxyIPs(t *testing.T) {
+	database, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	server := &API{store: database, codeLimiter: newIPLimiter(3, time.Minute, 16),
+		codeGlobalLimiter: newIPLimiter(1, time.Minute, 1),
+		config:            config.Config{TrustedProxyCIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}}
+	request := func(forwarded string) *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/code", nil)
+		r.RemoteAddr = "10.1.2.3:1234"
+		r.Header.Set("X-Forwarded-For", forwarded)
+		return r
+	}
+	if err := server.rateLimitAuth(httptest.NewRecorder(), request("198.51.100.1"), authCode); err != nil {
+		t.Fatalf("first code attempt: %v", err)
+	}
+	blocked := httptest.NewRecorder()
+	if err := server.rateLimitAuth(blocked, request("198.51.100.2"), authCode); err == nil || blocked.Header().Get("Retry-After") == "" {
+		t.Fatalf("global code cap bypassed by rotating forwarded IP: %v", err)
 	}
 }

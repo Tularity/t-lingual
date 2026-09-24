@@ -1511,6 +1511,148 @@ func TestManagerLeaseIndexesAreRaceSafe(t *testing.T) {
 	}
 }
 
+func TestCompletedAndFailedRunsResumeWithoutRewritingPriorTranscript(t *testing.T) {
+	for _, oldStatus := range []domain.InterpretationStatus{domain.InterpretationCompleted, domain.InterpretationFailed} {
+		t.Run(string(oldStatus), func(t *testing.T) {
+			fixture := newLiveFixture(t, nil)
+			ctx := context.Background()
+			old := []domain.Segment{
+				{ID: "seg_prior_1", SessionID: fixture.session.ID, UserID: fixture.owner.ID, Sequence: 1, SourceText: "Earlier phrase", TranslationStatus: domain.TranslationNotRequested, Final: true, StartMS: 100, EndMS: 2500, CreatedAt: liveTestNow},
+				{ID: "seg_prior_2", SessionID: fixture.session.ID, UserID: fixture.owner.ID, Sequence: 2, SourceText: "Later phrase", TranslationStatus: domain.TranslationNotRequested, Final: true, StartMS: 2000, EndMS: 2200, CreatedAt: liveTestNow.Add(time.Second)},
+			}
+			for _, segment := range old {
+				if err := fixture.database.AppendSegment(ctx, fixture.owner.ID, segment); err != nil {
+					t.Fatal(err)
+				}
+			}
+			started := liveTestNow
+			ended := liveTestNow.Add(time.Minute)
+			if err := fixture.database.UpdateInterpretationSessionStatus(ctx, fixture.owner.ID, fixture.session.ID, oldStatus, &started, &ended, ended); err != nil {
+				t.Fatal(err)
+			}
+			wsURL, served := startManagerServer(t, fixture.manager, fixture.owner, fixture.browserSession, fixture.session.ID)
+			connection := dialLive(t, wsURL)
+			writeClientJSON(t, connection, validLiveHello(16_000))
+			if ready := readLiveMessage(t, connection); ready.Type != "ready" || ready.OffsetMS != 2500 {
+				t.Fatalf("resumed ready = %#v", ready)
+			}
+			receiveWithin(t, fixture.provider.started)
+			fixture.stream.emit(t, asr.Event{Type: "final", Sequence: 1, Text: "New run", StartMS: 120, EndMS: 980, Language: "en-US"})
+			message := readLiveMessage(t, connection)
+			if message.Type != "final" || message.Segment.Sequence != 3 || message.Segment.StartMS != 2620 || message.Segment.EndMS != 3480 {
+				t.Fatalf("resumed final = %#v", message)
+			}
+			writeClientJSON(t, connection, map[string]string{"type": "end"})
+			if stopped := readLiveMessage(t, connection); stopped.Type != "stopped" || stopped.Status != string(domain.InterpretationCompleted) {
+				t.Fatalf("stop after resume = %#v", stopped)
+			}
+			assertCloseStatus(t, connection, websocket.StatusNormalClosure)
+			if err := receiveWithin(t, served); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := fixture.database.ListSegments(ctx, fixture.owner.ID, fixture.session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(stored) != 3 || stored[0].ID != old[0].ID || stored[0].EndMS != old[0].EndMS ||
+				stored[1].ID != old[1].ID || stored[1].EndMS != old[1].EndMS || stored[2].ID != message.Segment.ID {
+				t.Fatalf("resumed transcript rewrote history = %#v", stored)
+			}
+			session, err := fixture.database.GetInterpretationSession(ctx, fixture.owner.ID, fixture.session.ID)
+			if err != nil || session.Status != domain.InterpretationCompleted || session.StartedAt == nil || !session.StartedAt.Equal(started) || session.EndedAt == nil {
+				t.Fatalf("resumed session = %#v, %v", session, err)
+			}
+		})
+	}
+}
+
+func TestResumeReadyUsesMaximumEndAcrossLongTranscript(t *testing.T) {
+	fixture := newLiveFixture(t, nil)
+	for sequence := int64(1); sequence <= 205; sequence++ {
+		end := sequence * 100
+		if sequence == 1 {
+			end = 100_000
+		}
+		segment := domain.Segment{
+			ID: fmt.Sprintf("seg_offset_%03d", sequence), SessionID: fixture.session.ID, UserID: fixture.owner.ID,
+			Sequence: sequence, SourceText: "Previous utterance", TranslationStatus: domain.TranslationNotRequested,
+			Final: true, StartMS: sequence * 10, EndMS: end, CreatedAt: liveTestNow,
+		}
+		if err := fixture.database.AppendSegment(context.Background(), fixture.owner.ID, segment); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wsURL, served := startManagerServer(t, fixture.manager, fixture.owner, fixture.browserSession, fixture.session.ID)
+	connection := dialLive(t, wsURL)
+	writeClientJSON(t, connection, validLiveHello(16_000))
+	if ready := readLiveMessage(t, connection); ready.Type != "ready" || ready.OffsetMS != 100_000 {
+		t.Fatalf("resume ready = %#v; want older maximum offset 100000", ready)
+	}
+	connection.CloseNow()
+	receiveWithin(t, served)
+}
+
+func TestArchivedInterpretationRejectsLiveBeforeUpgrade(t *testing.T) {
+	fixture := newLiveFixture(t, nil)
+	ctx := context.Background()
+	if _, err := fixture.database.ArchiveInterpretationSession(ctx, fixture.owner.ID, fixture.session.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	wsURL, served := startManagerServer(t, fixture.manager, fixture.owner, fixture.browserSession, fixture.session.ID)
+	dialCtx, cancel := context.WithTimeout(ctx, liveTestTimeout)
+	defer cancel()
+	connection, response, err := websocket.Dial(dialCtx, wsURL, nil)
+	if connection != nil {
+		connection.CloseNow()
+	}
+	if err == nil || response == nil {
+		t.Fatalf("archived websocket upgraded: connection=%v response=%v error=%v", connection, response, err)
+	}
+	response.Body.Close()
+	if !errors.Is(receiveWithin(t, served), store.ErrConflict) || fixture.provider.startCount() != 0 {
+		t.Fatal("archived interpretation was admitted or started ASR")
+	}
+}
+
+func TestArchiveBetweenLiveLookupAndClaimRejectsWithoutStartingASR(t *testing.T) {
+	fixture := newLiveFixture(t, nil)
+	fixture.manager.afterPendingRegistration = func() {
+		if _, err := fixture.database.ArchiveInterpretationSession(context.Background(), fixture.owner.ID, fixture.session.ID, time.Now().UTC()); err != nil {
+			t.Errorf("archive before claim: %v", err)
+		}
+	}
+	wsURL, served := startManagerServer(t, fixture.manager, fixture.owner, fixture.browserSession, fixture.session.ID)
+	connection := dialLive(t, wsURL)
+	writeClientJSON(t, connection, validLiveHello(16_000))
+	if message := readLiveMessage(t, connection); message.Type != "error" {
+		t.Fatalf("archived claim = %#v, want error", message)
+	}
+	connection.CloseNow()
+	receiveWithin(t, served)
+	if fixture.provider.startCount() != 0 {
+		t.Fatal("archived claim started ASR")
+	}
+	session, err := fixture.database.GetInterpretationSession(context.Background(), fixture.owner.ID, fixture.session.ID)
+	if err != nil || session.ArchivedAt == nil || session.Status != domain.InterpretationCreated {
+		t.Fatalf("archive was overwritten: %#v, %v", session, err)
+	}
+}
+
+func TestHealthySameSessionTakeoverCanReclaimLiveRow(t *testing.T) {
+	fixture := newLiveFixture(t, nil)
+	previous, previousServed := startReadyLive(t, fixture.manager, fixture.owner, fixture.browserSession, fixture.session.ID, 16_000)
+	wsURL, nextServed := startManagerServer(t, fixture.manager, fixture.owner, fixture.browserSession, fixture.session.ID)
+	next := dialLive(t, wsURL)
+	writeClientJSON(t, next, validLiveHello(16_000))
+	if message := readLiveMessage(t, next); message.Type != "ready" {
+		t.Fatalf("same-session takeover = %#v, want ready", message)
+	}
+	previous.CloseNow()
+	next.CloseNow()
+	receiveWithin(t, previousServed)
+	receiveWithin(t, nextServed)
+}
+
 type liveFixture struct {
 	database       *store.Store
 	owner          domain.User
@@ -1700,6 +1842,7 @@ type liveMessage struct {
 	SessionID        string         `json:"sessionId"`
 	RunID            string         `json:"runId"`
 	ChunkMS          int            `json:"chunkMs"`
+	OffsetMS         int64          `json:"offsetMs"`
 	Status           string         `json:"status"`
 	Segment          domain.Segment `json:"segment"`
 	SegmentID        string         `json:"segmentId"`
