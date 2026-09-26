@@ -1,0 +1,31 @@
+/* ---------------------------------------------------------------------------
+ * THE COLLAPSE MARK
+ *
+ * A 4:3 box, the logo's own frame. The canvas the component adds fills it;
+ * under reduced motion the static logo it was given fills it instead, so the
+ * body sits at the same point either way.
+ * ------------------------------------------------------------------------- */
+@layer tl.components {
+  .tl-collapse-mark {
+    position: relative;
+    display: block;
+    aspect-ratio: 4 / 3;
+    max-inline-size: 100%;
+  }
+
+  .tl-collapse-mark__canvas,
+  .tl-collapse-mark > :not(canvas) {
+    position: absolute;
+    inset: 0;
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  /* Lingering, the drawing may go anywhere on the page: the canvas covers the
+   * viewport, and the element's box only places the frame on it. */
+  .tl-collapse-mark[data-linger] > .tl-collapse-mark__canvas {
+    position: fixed;
+    pointer-events: none;
+  }
+}

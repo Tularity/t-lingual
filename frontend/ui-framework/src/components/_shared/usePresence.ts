@@ -24,6 +24,15 @@ const EXIT_TIMEOUT_MS = 1200
 const EXIT_TIMEOUT_MARGIN_MS = 250
 
 /**
+ * Id prefix for an animation that is one window of a loop — finite as far as
+ * the Web Animations API can tell, but re-armed for ever. Exit waits on
+ * finite animations, so without this marker a loop built from windows would
+ * hold a closing surface open until its next window ended; it is skipped like
+ * an infinite loop is.
+ */
+export const LOOP_ANIMATION_PREFIX = 'tl-loop:'
+
+/**
  * When an animation will report finished, in its own time space. Infinity for
  * a loop, which never will — `finished` on an `infinite` CSS animation is a
  * promise that never settles.
@@ -144,7 +153,8 @@ export function usePresence(open: boolean, ref: RefObject<HTMLElement | null>): 
         .filter(
           (animation) =>
             (animation.playState === 'running' || animation.playState === 'paused') &&
-            Number.isFinite(endTimeOf(animation)),
+            Number.isFinite(endTimeOf(animation)) &&
+            !animation.id?.startsWith(LOOP_ANIMATION_PREFIX),
         )
       if (running.length === 0) {
         finish()

@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -85,7 +86,9 @@ export function ThemeProvider({
 
   const theme: ResolvedTheme = preference === 'system' ? system : preference
 
-  useEffect(() => {
+  // Written as the change commits, before paint: a swap that animates between
+  // themes (irisTransition) captures the new one as soon as its update returns.
+  useLayoutEffect(() => {
     const element = target ?? (typeof document !== 'undefined' ? document.documentElement : null)
     if (!element) return
     element.setAttribute('data-theme', theme)

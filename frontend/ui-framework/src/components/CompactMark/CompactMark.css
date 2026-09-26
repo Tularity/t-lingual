@@ -1,0 +1,253 @@
+/* ---------------------------------------------------------------------------
+ * THE COMPACT MARK AND ITS WAVE
+ *
+ * Every geometric value is written inline by the component; this file only
+ * decides colour and motion. Three levels move, each owning one kind of
+ * movement so they compose instead of overwriting each other:
+ *
+ *   __figure  the whole mark: one turn per loop, and a slight draw-in while
+ *             it spins so its corners stay inside the box.
+ *   __cell    one lattice cell, scaled about its own lattice centre.
+ *   __fill    the cell's ink, which rounds its corners during the dip.
+ *
+ * The cell and its fill are two boxes for a reason. The outer one carries the
+ * cell's resting shape — its per-corner radii — and clips to it; the inner one
+ * rounds all four corners at once. The visible tile is the intersection, so at
+ * rest it is exactly the resting shape and at the bottom of the dip a
+ * uniformly rounded tile, with no keyframe needing to know which corners a
+ * particular cell started with. That keeps every keyframe a literal, which is
+ * what makes it interpolate (a `var()` in a keyframe snaps).
+ *
+ * Framework tokens always carry a fallback: an undefined token with no
+ * fallback throws the declaration away, and a mark with no ink is a mark that
+ * is not there.
+ * ------------------------------------------------------------------------- */
+@layer tl.components {
+  .tl-compact-mark {
+    /* A fresh mark enters on the loop's seam, where every loop begins: whole
+     * and upright, with the ripple already starting. No offset is needed. */
+    --_tempo: var(--_cycle, 2400ms);
+
+    /* Width and height are written by the component, in pixels. */
+    position: relative;
+    display: inline-block;
+    flex: none;
+    line-height: 0;
+    vertical-align: middle;
+    /* The drawing is made of backgrounds, which forced colours would repaint
+     * to Canvas and print would drop; see the forced-colours block below for
+     * what replaces the palette. */
+    forced-color-adjust: none;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* One ink per piece, in the logo's tonal order: the L and the corner in the
+   * solid amber, the band a step deeper, the tongue piece a step lighter. */
+  .tl-compact-mark[data-tone='brand'] {
+    --_ink-a: var(--tl-logo-solid, #f49c12);
+    --_ink-b: var(--tl-logo-base, #e99a22);
+    --_ink-c: var(--tl-logo-light, #f7b338);
+    --_ink-d: var(--tl-logo-solid, #f49c12);
+  }
+  .tl-compact-mark[data-tone='mono'] {
+    --_ink-a: var(--tl-logo-solid, #f49c12);
+    --_ink-b: var(--_ink-a);
+    --_ink-c: var(--_ink-a);
+    --_ink-d: var(--_ink-a);
+  }
+  /* Every piece fully opaque. The tonal steps cannot survive as opacities
+   * here: joined cells overlap by the bleed, and two translucent boxes over
+   * the same pixels would draw the seam the bleed exists to hide. The gaps
+   * carry the pieces on their own. */
+  .tl-compact-mark[data-tone='inherit'] {
+    --_ink-a: currentColor;
+    --_ink-b: currentColor;
+    --_ink-c: currentColor;
+    --_ink-d: currentColor;
+  }
+
+  .tl-compact-mark__figure {
+    position: absolute;
+    inset: 0;
+  }
+
+  .tl-compact-mark__cell {
+    position: absolute;
+    overflow: hidden;
+  }
+  .tl-compact-mark__cell[data-piece='a'] { --_ink: var(--_ink-a); }
+  .tl-compact-mark__cell[data-piece='b'] { --_ink: var(--_ink-b); }
+  .tl-compact-mark__cell[data-piece='c'] { --_ink: var(--_ink-c); }
+  .tl-compact-mark__cell[data-piece='d'] { --_ink: var(--_ink-d); }
+
+  .tl-compact-mark__fill {
+    position: absolute;
+    inset: 0;
+    background: var(--_ink);
+  }
+
+  @media (forced-colors: active) {
+    .tl-compact-mark[data-tone='brand'],
+    .tl-compact-mark[data-tone='mono'] {
+      --_ink-a: CanvasText;
+      --_ink-b: CanvasText;
+      --_ink-c: CanvasText;
+      --_ink-d: CanvasText;
+    }
+  }
+
+  /* ===========================================================================
+   * WAVE
+   *
+   * A relay of two gestures, never both at once. Running the ripple through
+   * the turn made each blur the other: a mark that is coming apart and
+   * spinning is doing two things, and neither reads. The loop's seam is the
+   * landing, and the phases run:
+   *
+   *   0-44.5%    RIPPLE. The moment the turn lands, the mark stays put and a
+   *              wave crosses its cells from the lower-left corner toward the
+   *              upper right, the way the logo's tail leaves. Each cell's part
+   *              lasts 14% of the loop and the start crosses in 30.5%, so the
+   *              moving band is three to four diagonals wide while the deep
+   *              part of it stays near two, and most of every piece is
+   *              standing in every frame.
+   *   44.5-58%   PAUSE. About a third of a second of the whole, upright logo.
+   *              It sits after the ripple, not after the landing: the landing
+   *              is a hand-off, so the ripple takes the motion over at once,
+   *              and the beat of stillness comes where the mark has just put
+   *              itself back together and is about to turn.
+   *   58-100%    TURN. The whole mark turns once, whole, and lands on the seam,
+   *              straight into the next ripple.
+   *
+   * The turn is a single 0-to-360 keyframe pair with every change of speed in
+   * its `linear()` curve: a keyframe with easing on both sides is a stop, and a
+   * turn built from several eased segments stops at each of them. It picks up
+   * briskly out of the pause and spends the second half settling — the last
+   * hundred degrees take about as long as the first two hundred and fifty — so
+   * it arrives slowly enough for the ripple to start from a mark at rest.
+   *
+   * The draw-in keeps a turning square inside the box it was given. At 45
+   * degrees this rounded square reaches 1.26 times its half-side from the
+   * centre, so it gathers to 0.78 as the turn picks up and returns to full size
+   * only over the settle, when the remaining angle is small enough for the
+   * corners to fit again. Checked against the turn curve sample by sample, the
+   * corners stay inside the box for the whole loop (the first instant of the
+   * turn is out by a fiftieth of a pixel at 192px).
+   *
+   * Each cell's part is a trough and then a crest, so the ripple has a low and
+   * a high side like a real wave rather than only a dent. In the trough the
+   * tile shrinks to 0.45, rounds to 45% and slips a twelfth of its width
+   * toward the upper right — for an instant it is one of the logo's own tail
+   * cells, leaving — then it comes back, overshoots to 1.06 and settles. The
+   * crest reaches into the gaps but never closes one: two facing cells at the
+   * crest together take under a quarter of the gap, and at the silhouette a
+   * crest passes the box by a few hundredths of a cell, under a fifth of a
+   * pixel at spinner sizes. The translation is in percent of the cell's own
+   * box, so it scales with every size without a length in the keyframe.
+   * Shrinking, rounding, drift and swell share offsets and curves, so they
+   * read as one gesture.
+   *
+   * Each level's complete animation is kept in a private property, declared
+   * unconditionally; only the rule that plays it sits under the media query.
+   * That lets Spinner.css re-declare the loop under reduced motion by name,
+   * without restating a curve.
+   * ======================================================================== */
+  @keyframes tl-compact-mark-turn {
+    from { rotate: 0deg; }
+    to   { rotate: 360deg; }
+  }
+  @keyframes tl-compact-mark-gather {
+    0%, 58% {
+      scale: 1;
+      animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    64%, 84% {
+      scale: 0.78;
+      animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    100% {
+      scale: 1;
+    }
+  }
+  @keyframes tl-compact-mark-dip {
+    0% {
+      transform: translate(0, 0) scale(1);
+      animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    5.5% {
+      transform: translate(8%, -8%) scale(0.45);
+      animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    10% {
+      transform: translate(0, 0) scale(1.06);
+      animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    14%, 100% {
+      transform: translate(0, 0) scale(1);
+    }
+  }
+  @keyframes tl-compact-mark-round {
+    0% {
+      border-radius: 0;
+      animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    5.5% {
+      border-radius: 45%;
+      animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+    }
+    10%, 100% {
+      border-radius: 0;
+    }
+  }
+
+  /* `rotate` and `scale` rather than `transform`, so the turn and the draw-in
+   * can be two animations with two curves on one element. These are loops,
+   * not transitions, so the recipes' reason for animating `transform` alone
+   * does not apply. */
+  .tl-compact-mark__figure {
+    --_run:
+      tl-compact-mark-turn var(--_tempo)
+        linear(0, 0 58%, 0.0008 59%, 0.0057 60%, 0.0179 61%, 0.0393 62%, 0.0704 63%,
+          0.111 64%, 0.1591 65%, 0.2121 66%, 0.2662 67%, 0.3204 68%, 0.3745 69%,
+          0.4286 70%, 0.4827 71%, 0.5344 72%, 0.5825 73%, 0.6272 74%, 0.6686 75%,
+          0.7068 76%, 0.7419 77%, 0.7742 78%, 0.8036 79%, 0.8303 80%, 0.8545 81%,
+          0.8763 82%, 0.8958 83%, 0.9131 84%, 0.9284 85%, 0.9418 86%, 0.9534 87%,
+          0.9634 88%, 0.9718 89%, 0.9788 90%, 0.9845 91%, 0.9891 92%, 0.9927 93%,
+          0.9954 94%, 0.9974 95%, 0.9986 96%, 0.9994 97%, 0.9998 98%, 1 99%, 1)
+        infinite,
+      tl-compact-mark-gather var(--_tempo) linear infinite;
+  }
+  .tl-compact-mark__cell {
+    /* The dip starts at this cell's share of the 30.5% the ripple takes to
+     * cross. Written a whole loop early so it is negative, which puts every
+     * cell mid-loop, in step with the figure, from the first frame. */
+    --_delay: calc(var(--_tempo) * (var(--_phase, 0) * 0.305 - 1));
+    --_run: tl-compact-mark-dip var(--_tempo) linear var(--_delay) infinite;
+  }
+  .tl-compact-mark__fill {
+    --_run: tl-compact-mark-round var(--_tempo) linear var(--_delay) infinite;
+  }
+  /* The rounding is the one part of the wave the compositor cannot run, and
+   * as a loop it would keep the main thread busy on every frame. Once the
+   * component has windowed Web Animations aligned to the dips (see
+   * compactMarkRounding.ts), this loop steps aside; everywhere else — no Web
+   * Animations, a paused or replaced dip — it is what draws the rounding. */
+  .tl-compact-mark[data-rounding='scripted'] .tl-compact-mark__fill {
+    --_run: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tl-compact-mark[data-motion='wave'] :is(.tl-compact-mark__figure, .tl-compact-mark__cell, .tl-compact-mark__fill) {
+      animation: var(--_run);
+    }
+  }
+
+  /* An infinite loop inside a closing overlay would keep playing on a surface
+   * that is fading out, which reads as a thing that has not noticed it is
+   * leaving. Cancelled outright on the way out; the ancestor is pinned to a
+   * framework surface so a consumer's own `data-state` cannot stop it. */
+  [data-tl][data-state='exiting'] :is(.tl-compact-mark__figure, .tl-compact-mark__cell, .tl-compact-mark__fill) {
+    animation: none;
+  }
+}

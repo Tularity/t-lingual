@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { useRouter } from '../../app/router'
 import { Brand } from '../../app/AppShell'
-import { Button, Card, EmptyState } from '../../design-system'
+import { LOADING_STATE_DELAY } from '@t-lingual/ui'
+import { Button, Card, EmptyState, Spinner } from '../../design-system'
 import { errorMessage, languages } from '../../app/utils'
 
 export function ShareLanding() {
@@ -21,5 +22,21 @@ export function ShareLanding() {
     api.sharing.redeem(token.current, target).then(value => { if (active) navigate(`/shared/${value.sessionId}`, { replace: true }) }).catch(caught => { if (active) setError(errorMessage(caught)) })
     return () => { active = false }
   }, [attempt, navigate])
-  return <main className="auth-service-error"><Card><Brand />{error ? <EmptyState icon="warning" title={t("This share is unavailable")} description={error} action={<Button onClick={() => { setError(''); setAttempt(value => value + 1) }}>{t("Try again")}</Button>} /> : <p role="status">{t("Opening the shared conversation…")}</p>}</Card></main>
+  // Opening a share is a page load like any other, with nothing drawn over the
+  // page; should it take a moment, a quiet word says what is happening. Only
+  // a failure needs the card.
+  if (!error) return <main className="app-boot" aria-label={t("Opening the shared conversation…")}><OpeningShare label={t("Opening the shared conversation…")} /></main>
+  return <main className="auth-service-error"><Card><Brand /><EmptyState icon="warning" title={t("This share is unavailable")} description={error} action={<Button onClick={() => { setError(''); setAttempt(value => value + 1) }}>{t("Try again")}</Button>} /></Card></main>
+}
+
+function OpeningShare({ label }: { label: string }) {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShown(true), LOADING_STATE_DELAY)
+    return () => window.clearTimeout(timer)
+  }, [])
+  return <>
+    <p className="sr-only" role="status">{label}</p>
+    {shown && <span className="app-boot__wait" aria-hidden="true"><Spinner label="" />{label}</span>}
+  </>
 }

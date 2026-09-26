@@ -1,0 +1,26 @@
+/* The layer the session changes hands behind: a backdrop in the page's own
+ * colour, with a glow of its own, and for signing in the logo's collapse. */
+.app-curtain { position:fixed; inset:0; z-index:calc(var(--tl-z-toast) - 1); display:grid; place-items:center; pointer-events:none; }
+.app-curtain__backdrop { position:absolute; inset:0; background:var(--tl-bg); opacity:1; pointer-events:auto; transition:opacity 260ms var(--tl-ease-out); }
+/* The sign-in's logo is the whole screen's subject, and its dots are thrown wide. */
+.app-curtain__mark { position:relative; width:min(360px,72vw); opacity:1; transition:opacity 260ms var(--tl-ease-out); }
+/* The glow is a layer of its own, so it can arrive after the page colour. */
+.app-curtain__backdrop::before { content:''; position:absolute; inset:0; background:radial-gradient(circle, var(--color-surface-accent), transparent 30%); }
+@starting-style { .app-curtain__backdrop, .app-curtain__mark { opacity:0; } }
+.app-curtain[data-stage='reveal'] .app-curtain__backdrop { opacity:0; pointer-events:none; transition:opacity var(--_lift) var(--tl-ease-out); }
+/* Signing in. While the login page slides away the backdrop is clear — but
+ * already catching clicks. The workspace mounts behind it the moment the
+ * animation starts, so it is there in full in that same frame: plain page
+ * colour, exactly what the login page left behind, so the eye sees no change.
+ * Only its glow fades in. */
+.app-curtain[data-kind='enter'][data-stage='leave'] .app-curtain__backdrop { opacity:0; }
+.app-curtain[data-kind='enter'][data-stage='leave'] .app-curtain__backdrop::before { opacity:0; }
+.app-curtain[data-kind='enter'][data-stage='play'] .app-curtain__backdrop { opacity:1; transition:none; }
+.app-curtain[data-kind='enter'][data-stage='play'] .app-curtain__backdrop::before { opacity:1; transition:opacity 260ms var(--tl-ease-out); }
+/* Uncovering the workspace: the backdrop does not fade; a circle opens in it
+ * from the workspace's logo (the framework's iris) until the whole screen is
+ * clear. */
+.app-curtain[data-kind='enter'][data-stage='reveal'] .app-curtain__backdrop { opacity:1; pointer-events:none; transition:none; }
+/* Signing out: the backdrop is there at once, all of it inside the iris that
+ * closes onto the sign-out button; then it simply fades off the login page. */
+.app-curtain[data-kind='exit'][data-stage='cover'] .app-curtain__backdrop { transition:none; }

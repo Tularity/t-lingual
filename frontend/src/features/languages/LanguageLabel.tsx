@@ -69,6 +69,8 @@ export function LanguageLabel({ code, children, native = false, compact = false 
   return <span className={`language-label${compact ? ' language-label--compact' : ''}`}>
     {flag && <img className="language-label__flag" src={flag} width={compact ? 16 : 18} height={compact ? 16 : 18} alt="" aria-hidden="true" />}
     <span className="language-label__text" dir="auto">{text}</span>
-    {showNative && <span className="language-label__native" dir="auto">{nativeName}</span>}
+    {/* Only the name is isolated, so the separator stays between the two names
+      * instead of travelling to the far end of a right-to-left one. */}
+    {showNative && <span className="language-label__native"><bdi>{nativeName}</bdi></span>}
   </span>
 }

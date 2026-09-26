@@ -1,8 +1,8 @@
 /* ---------------------------------------------------------------------------
  * MOTION TOKENS
  *
- * The motion language is the one x-tier settled on after several rounds, and
- * its two load-bearing ideas are inherited whole rather than reinterpreted:
+ * The motion language rests on two load-bearing ideas, and every recipe below
+ * is built to keep them intact:
  *
  *   1. ONE SIGNATURE CURVE. `cubic-bezier(0.16, 1, 0.3, 1)` is a hard expo-out
  *      that covers ~80% of its distance in the first third of its duration.

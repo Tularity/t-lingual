@@ -1,6 +1,6 @@
 import { forwardRef, type HTMLAttributes } from 'react'
 import { cx } from '../../utils/cx'
-import { Mark } from '../Mark/Mark'
+import { CompactMark } from '../CompactMark/CompactMark'
 import './Spinner.css'
 
 export type SpinnerSize = 'xs' | 'sm' | 'md' | 'lg'
@@ -15,8 +15,9 @@ export interface SpinnerProps extends HTMLAttributes<HTMLSpanElement> {
   label?: string
 }
 
-/** Pixel size per step. The mark is drawn at these, not scaled to them, which
- *  is what lets it pick its heaviest cut for the three smallest. */
+/** Pixel size per step. The mark is laid out at these sizes rather than scaled
+ *  to them, so the three smallest get the four-cell lattice and `lg` the
+ *  five-cell one, and every gap between pieces stays at least a pixel wide. */
 const SIZE_PX: Record<SpinnerSize, number> = {
   xs: 12,
   sm: 14,
@@ -25,7 +26,7 @@ const SIZE_PX: Record<SpinnerSize, number> = {
 }
 
 /**
- * Indeterminate activity — the brand mark, pulsing.
+ * Indeterminate activity — the compact brand mark, its cells rippling.
  *
  * It used to be a generic rotating arc. Every busy state in the library goes
  * through here, so that was the single largest surface in the product showing
@@ -36,14 +37,15 @@ const SIZE_PX: Record<SpinnerSize, number> = {
  * on accent fills, in disabled controls and in text, and in every one of those
  * it has to be whatever colour the thing around it is.
  *
- * MOTION. `pulse` rather than `sweep`: nothing moves and no row is ever
- * missing, so the mark stays a mark at 12px, and a brightness wave is quiet
- * enough to sit beside a label without competing with it. The loop keeps
- * running under `prefers-reduced-motion` — a spinner that stops reads as
- * "hung", the opposite of what it exists to say. Mark.css gates every one of
- * the mark's loops on `no-preference`, so on its own the mark does stop;
- * Spinner.css re-declares this one loop under `reduce`, for exactly this
- * reason.
+ * MOTION. The mark's `wave`: a ripple crosses its cells, the mark holds for a
+ * beat, then turns once and lands straight into the next ripple, so it is
+ * whole or nearly whole in every frame and still reads as the logo at 12px. The mark's own tempo, not a
+ * faster one: a spinner beating quicker than the same mark elsewhere on the
+ * page would be two rhythms for one brand. The loop keeps running under
+ * `prefers-reduced-motion` — a spinner that stops reads as "hung", the
+ * opposite of what it exists to say. CompactMark.css gates its loop on
+ * `no-preference`, so on its own the mark does stop; Spinner.css re-declares
+ * the loop under `reduce`, for exactly this reason.
  */
 export const Spinner = forwardRef<HTMLSpanElement, SpinnerProps>(function Spinner(
   { size = 'md', label, className, ...rest },
@@ -60,7 +62,7 @@ export const Spinner = forwardRef<HTMLSpanElement, SpinnerProps>(function Spinne
       aria-hidden={label ? undefined : true}
       {...rest}
     >
-      <Mark size={SIZE_PX[size]} tone="inherit" loading="pulse" cycle={1200} />
+      <CompactMark size={SIZE_PX[size]} tone="inherit" motion="wave" />
     </span>
   )
 })

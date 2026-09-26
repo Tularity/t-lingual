@@ -12,11 +12,10 @@
     --_radius: var(--tl-radius-md);
     --_chevron-size: 1.15em;
 
-    position: relative;
     display: inline-flex;
     max-width: 100%;
-    /* The em units below (chevron size, reserved padding) resolve against this,
-     * so one size token drives the glyph and the gutter it needs. */
+    /* The em units below (chevron size, icon box) resolve against this, so one
+     * size token drives the glyphs and the gaps they need. */
     font-size: var(--_fs);
     vertical-align: middle;
   }
@@ -35,20 +34,17 @@
   }
 
   .tl-select__control {
-    /* Strips the UA arrow so the overlay below is the only one drawn. */
-    appearance: none;
+    display: flex;
     flex: 1 1 auto;
+    align-items: center;
+    gap: var(--tl-space-4);
     min-width: 0;
     height: var(--_h);
-    /* The end gutter is the chevron's box plus its inset, so a longer option
-     * label ellipses rather than sliding under the glyph. */
-    padding-inline: var(--_px) calc(var(--_px) + var(--_chevron-size) + var(--tl-space-2));
-    font-size: inherit;
+    padding-inline: var(--_px);
+    font: inherit;
     font-weight: var(--tl-weight-medium);
     line-height: var(--tl-leading-none);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    text-align: start;
 
     color: var(--_fg);
     background: var(--_bg);
@@ -59,8 +55,47 @@
     transition: var(--tl-transition-control);
   }
 
-  .tl-select__control:hover:not(:disabled) {
+  .tl-select__control:hover:not(:disabled),
+  .tl-select__control[aria-expanded='true'] {
     border-color: var(--_border-hover);
+  }
+
+  .tl-select__icon {
+    flex: none;
+    display: inline-flex;
+    color: var(--tl-text-muted);
+  }
+
+  /* The value and, unseen, every other choice share one grid cell, so the
+   * cell is as wide as the widest. A longer label than the room allows
+   * ellipses rather than pushing the chevron out of the box. */
+  .tl-select__face {
+    display: grid;
+    grid-template-columns: minmax(0, max-content);
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .tl-select__value,
+  .tl-select__sizer {
+    grid-area: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tl-select__sizer {
+    visibility: hidden;
+  }
+
+  .tl-select__chevron {
+    flex: none;
+    display: flex;
+    align-items: center;
+    font-size: var(--_chevron-size);
+    color: var(--_chevron);
+    transition: var(--tl-transition-control);
   }
 
   /* -- States ------------------------------------------------------------- */
@@ -83,49 +118,15 @@
     cursor: not-allowed;
   }
 
-  /* Nothing chosen yet reads as quieter than a real answer. Driven by `:has`
-   * rather than by React state so an uncontrolled select stays uncontrolled —
-   * mirroring the value into state to style it is what forces every consumer
-   * into a controlled component for a colour change.
-   *
-   * `:not(:disabled)` is load-bearing: `:has()` takes its argument's
-   * specificity, so this rule sets `color` above anything driven by `--_fg` and
-   * an unanswered disabled select would otherwise read as merely subtle — and
-   * under forced colors it would lose `GrayText` altogether. */
-  .tl-select__control:not(:disabled):has(option[data-placeholder]:checked) {
+  /* Nothing chosen yet reads as quieter than a real answer. */
+  .tl-select__control[data-empty]:not(:disabled) {
     color: var(--tl-text-subtle);
     font-weight: var(--tl-weight-regular);
   }
 
-  /* A multiple select is a list box: it has its own scroll height and there is
-   * nothing for a chevron to point at. */
-  .tl-select[data-multiple] .tl-select__control {
-    height: auto;
-    padding-inline-end: var(--_px);
-    white-space: normal;
-  }
-
-  /* Engines that render the popup with page styles (rather than as a native
-   * menu) otherwise inherit the control's weight and lose the group headings. */
-  .tl-select__control optgroup {
-    font-weight: var(--tl-weight-semibold);
-  }
-  .tl-select__control option {
-    font-weight: var(--tl-weight-regular);
-  }
-
-  .tl-select__chevron {
-    position: absolute;
-    inset-block: 0;
-    inset-inline-end: var(--_px);
-    display: flex;
-    align-items: center;
-    font-size: var(--_chevron-size);
-    color: var(--_chevron);
-    /* The overlay sits on top of the control, so without this it would swallow
-     * the click that opens the picker — the one thing the component exists for. */
-    pointer-events: none;
-    transition: var(--tl-transition-control);
+  /* The open list is the shared menu; only its rows' rhythm is the select's. */
+  .tl-select__menu .tl-menu__item {
+    min-height: 34px;
   }
 
   /* Forced colors drops `background-color`, which is the only thing separating

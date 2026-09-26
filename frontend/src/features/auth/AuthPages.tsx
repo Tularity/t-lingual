@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Button, Input, Icon, Dialog } from '../../design-system'
+import { lazy, startTransition, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { CodeInput } from '@t-lingual/ui'
+import { Button, Input, Icon, Dialog, LoadingState, Spinner } from '../../design-system'
 import { Brand, InterfaceMenus } from '../../app/AppShell'
 import { ApiError } from '../../api/client'
 import { useAuth } from '../../app/auth'
@@ -8,7 +9,10 @@ import { errorMessage } from '../../app/utils'
 import { useI18n } from '../../app/i18n'
 import { LanguageLabel } from '../languages'
 import './auth.css'
-const RegistrationHelpDialog=lazy(()=>import('./RegistrationHelpDialog').then(module=>({default:module.RegistrationHelpDialog})))
+// Fetched when the temporary-code dialog opens, so asking for help waits
+// only for its text, with one loading state rather than two in a row.
+const loadRegistrationHelp=()=>import('./RegistrationHelpDialog')
+const RegistrationHelpDialog=lazy(()=>loadRegistrationHelp().then(module=>({default:module.RegistrationHelpDialog})))
 
 function AuthLayout({ title, subtitle, children, footer }: { title: string; subtitle: string; children: ReactNode; footer: ReactNode }) {
   const { t } = useI18n()
@@ -28,7 +32,7 @@ function AuthLayout({ title, subtitle, children, footer }: { title: string; subt
       </div>
       <div className="auth-story__trust"><Icon name="shield" size={17} /><span>{t("A private workspace for every voice.")}</span></div>
     </section>
-    <section className="auth-panel"><div className="auth-interface"><InterfaceMenus /></div><div className="auth-card"><div className="auth-mobile-brand"><Brand /></div><div className="auth-card__heading"><span className="auth-card__eyebrow">{t("YOUR WORKSPACE")}</span><h2>{title}</h2><p>{subtitle}</p></div>{__TLINGUAL_DEVELOPMENT_MOCK__ && <div className="auth-demo" role="status"><Icon name="info" size={17} /><span><strong>{t("Demo preview")}</strong> {t("· Passkey verification is simulated in this development workspace.")}</span></div>}{children}<div className="auth-card__footer">{footer}</div><p className="auth-security"><Icon name="lock" size={15} />{t("Passkeys and one-time codes · No passwords")}</p></div></section>
+    <section className="auth-panel"><div className="auth-interface"><InterfaceMenus /></div><div className="auth-card"><div className="auth-mobile-brand"><Brand /></div><div className="auth-card__heading"><span className="auth-card__eyebrow">{t("YOUR WORKSPACE")}</span><h2>{title}</h2><p>{subtitle}</p></div>{__TLINGUAL_DEVELOPMENT_MOCK__ && <div className="auth-demo" role="status"><Icon name="info" size={17} /><span><strong>{t("Demo preview")}</strong> {t("· Passkey verification is simulated in this development workspace.")}<small className="auth-demo__codes">{t("Test codes 111111, 222222, 333333 and 444444 sign in to a workspace that takes about 3, 7, 9 or 25 seconds to load; 555555 registers a new account.")}</small></span></div>}{children}<div className="auth-card__footer">{footer}</div><p className="auth-security"><Icon name="lock" size={15} />{t("Passkeys and one-time codes · No passwords")}</p></div></section>
   </main>
 }
 
@@ -38,6 +42,12 @@ function useErrorFocus(error: string, attempt: number) {
   return errorRef
 }
 
+/**
+ * A temporary code, typed into six tiles. It goes on by itself the moment the
+ * sixth digit is in — to registration, or into the account it signs in to —
+ * so there is nothing to press. A wrong code stays in view, marked, until the
+ * next digit starts a fresh one.
+ */
 function CodeEntry({onComplete,retryUntil,onRateLimited}:{onComplete?:()=>void;retryUntil:number;onRateLimited:(until:number)=>void}) {
   const {t}=useI18n()
   const {code:redeemCode}=useAuth()
@@ -45,24 +55,27 @@ function CodeEntry({onComplete,retryUntil,onRateLimited}:{onComplete?:()=>void;r
   const [code,setCode]=useState('')
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
-  const [attempt,setAttempt]=useState(0)
   const [clock,setClock]=useState(Date.now)
   const retrySeconds=Math.max(0,Math.ceil((retryUntil-clock)/1000))
   useEffect(()=>{const timer=window.setInterval(()=>setClock(Date.now()),1000);return()=>window.clearInterval(timer)},[])
-  const errorRef=useErrorFocus(error,attempt)
-  const submit=async(event:FormEvent)=>{
-    event.preventDefault();if(busy||retrySeconds>0)return;setAttempt(value=>value+1)
-    if(!/^\d{6}$/u.test(code)){setError(t('Enter all six digits.'));return}
+  const submit=async(value:string)=>{
+    if(busy||retrySeconds>0)return
     setBusy(true);setError('')
-    try {const kind=await redeemCode(code);setCode('');onComplete?.();navigate(kind==='registration'?'/register':'/settings#security',{replace:kind==='login'})}
+    try {const kind=await redeemCode(value);setCode('');onComplete?.();navigate(kind==='registration'?'/register':'/settings#security',{replace:kind==='login'})}
     catch(caught){setError(t(errorMessage(caught)));if(caught instanceof Error&&'status' in caught&&caught.status===429)onRateLimited(Date.now()+1000*Math.max(1,caught instanceof ApiError?caught.retryAfterSeconds??60:'retryAfterSeconds' in caught?Number(caught.retryAfterSeconds)||60:60))}finally{setBusy(false)}
   }
-  return <form className="auth-form auth-code-entry" aria-busy={busy} onSubmit={event=>void submit(event)}>
-    <Input autoFocus label={t('Six-digit code')} hint={t('Use the code provided by an administrator to register or sign in.')} inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="000000" value={code} disabled={busy} onChange={event=>setCode(event.target.value.replace(/\D/gu,''))} />
-    {error&&<div className="auth-error" role="alert" ref={errorRef} tabIndex={-1}><Icon name="warning" size={18}/><span>{error}</span></div>}
-    <Button type="submit" variant="primary" icon="arrowRight" loading={busy} disabled={retrySeconds>0}>{t('Continue with code')}</Button>
-    {retrySeconds>0&&<p className="auth-code-countdown" role="status">{t('Try again in {seconds} seconds',{seconds:retrySeconds})}</p>}
-  </form>
+  const change=(next:string)=>{setCode(next);if(error)setError('')}
+  return <div className="auth-code-entry">
+    <span className="auth-code-entry__badge" aria-hidden="true"><Icon name="key" size={22}/></span>
+    <p className="auth-code-entry__lead">{t('Use the code provided by an administrator to register or sign in.')}</p>
+    <CodeInput autoFocus aria-label={t('Six-digit code')} aria-describedby="auth-code-status" value={code} onValueChange={change} onComplete={value=>void submit(value)} invalid={Boolean(error)} busy={busy} disabled={retrySeconds>0}/>
+    <div id="auth-code-status" className="auth-code-entry__status" data-tone={error?'danger':busy?'busy':undefined} aria-live="polite">
+      {error?<span role="alert"><Icon name="warning" size={16}/>{error}</span>
+        :busy?<span><Spinner label=""/>{t('Checking your code…')}</span>
+        :retrySeconds>0?<span>{t('Try again in {seconds} seconds',{seconds:retrySeconds})}</span>
+        :<span>{t('It goes on by itself once all six digits are in.')}</span>}
+    </div>
+  </div>
 }
 
 function CodeAccessButton() {
@@ -73,9 +86,11 @@ function CodeAccessButton() {
   const [helpOrigin,setHelpOrigin]=useState<{x:number;y:number}>()
   const [retryUntil,setRetryUntil]=useState(0)
   return <>
-    <Button className="auth-code-launcher" variant="secondary" size="lg" icon="key" onClick={()=>setOpen(true)}>{t('Use a temporary code')}</Button>
-    <Dialog open={open} title={t('Temporary code')} onClose={()=>setOpen(false)} footer={<><Button variant="ghost" icon="info" onClick={event=>{const box=event.currentTarget.getBoundingClientRect();setHelpOrigin({x:box.left+box.width/2,y:box.top+box.height/2});setHelpMounted(true);setHelpOpen(true)}}>{t('How to register')}</Button><Button onClick={()=>setOpen(false)}>{t('Cancel')}</Button></>}><CodeEntry onComplete={()=>setOpen(false)} retryUntil={retryUntil} onRateLimited={setRetryUntil}/></Dialog>
-    {helpMounted&&<Suspense fallback={<Dialog open={helpOpen} origin={helpOrigin} size="full" title={t('How to register')} onClose={()=>setHelpOpen(false)}><p role="status">{t('Loading registration help')}</p></Dialog>}><RegistrationHelpDialog open={helpOpen} origin={helpOrigin} onClose={()=>setHelpOpen(false)}/></Suspense>}
+    <Button className="auth-code-launcher" variant="secondary" size="lg" icon="key" onClick={()=>{void loadRegistrationHelp();setOpen(true)}}>{t('Use a temporary code')}</Button>
+    <Dialog open={open} size="sm" title={t('Temporary code')} onClose={()=>setOpen(false)} footer={<><Button variant="ghost" icon="info" onClick={event=>{const box=event.currentTarget.getBoundingClientRect();setHelpOrigin({x:box.left+box.width/2,y:box.top+box.height/2});startTransition(()=>{setHelpMounted(true);setHelpOpen(true)})}}>{t('How to register')}</Button><Button onClick={()=>setOpen(false)}>{t('Cancel')}</Button></>}><CodeEntry onComplete={()=>setOpen(false)} retryUntil={retryUntil} onRateLimited={setRetryUntil}/></Dialog>
+    {/* The boundary is there before the dialog is asked for, so opening it in a
+      * transition never flashes the fallback: the preloaded code settles first. */}
+    <Suspense fallback={<Dialog open={helpOpen} origin={helpOrigin} size="full" title={t('How to register')} onClose={()=>setHelpOpen(false)}><LoadingState size={140} label={t('Loading registration help')} /></Dialog>}>{helpMounted&&<RegistrationHelpDialog open={helpOpen} origin={helpOrigin} onClose={()=>setHelpOpen(false)}/>}</Suspense>
   </>
 }
 

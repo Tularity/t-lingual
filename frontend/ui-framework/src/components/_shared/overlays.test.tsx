@@ -65,9 +65,11 @@ const hidden = (element: Element) =>
  * long enough to look at the DOM during it, which is where the latched size,
  * the latched side and the re-open-mid-exit reversal actually live. `loop`
  * adds an infinite animation alongside, the kind a Spinner in the panel would
- * contribute; the hook must not wait on it.
+ * contribute; `windowed` adds one window of a windowed loop — finite, long, and
+ * never settling while the loop is alive, like the compact mark's rounding.
+ * The hook must wait on neither.
  */
-function holdExits({ loop = false } = {}) {
+function holdExits({ loop = false, windowed = false } = {}) {
   let release!: () => void
   const finished = new Promise<Animation>((resolve) => {
     release = () => resolve({} as Animation)
@@ -78,7 +80,14 @@ function holdExits({ loop = false } = {}) {
     finished: new Promise<Animation>(() => {}),
     effect: { getComputedTiming: () => ({ endTime: Infinity }) },
   }
-  Element.prototype.getAnimations = () => (loop ? [finite, infinite] : [finite]) as unknown as Animation[]
+  const loopWindow = {
+    id: 'tl-loop:compact-mark-round',
+    playState: 'running',
+    finished: new Promise<Animation>(() => {}),
+    effect: { getComputedTiming: () => ({ endTime: 2400 }) },
+  }
+  Element.prototype.getAnimations = () =>
+    [finite, ...(loop ? [infinite] : []), ...(windowed ? [loopWindow] : [])] as unknown as Animation[]
   return release
 }
 
@@ -207,8 +216,8 @@ describe('Dialog', () => {
   })
 
   it('closes promptly with a loading button inside it', async () => {
-    // A loading Button renders the pulsing mark, an infinite animation, and
-    // `usePresence` waits on every animation in the subtree. Mark.css cancels
+    // A loading Button renders the compact mark's wave, an infinite animation,
+    // and `usePresence` waits on every animation in the subtree. The mark cancels
     // its loops under `[data-state='exiting']` so the dialog is released by
     // its own transitions rather than by the 1200ms backstop. jsdom runs no
     // animations, so the cancel rule itself is checked in the browser; what
@@ -339,6 +348,23 @@ describe('Dialog', () => {
     release()
     // Well inside the 1200ms backstop, which is what an awaited infinite
     // animation would otherwise leave as the only way out.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: 900 })
+  })
+
+  it('does not wait on the window of a windowed loop', async () => {
+    // A window is finite to the Web Animations API, so without its loop id the
+    // hook would wait on a promise that settles only when the loop stops —
+    // and stretch the backstop to the window's 2400ms end besides.
+    const release = holdExits({ windowed: true })
+    const busy = (open: boolean) => (
+      <Dialog open={open} aria-label="Busy">
+        <DialogBody>Saving.</DialogBody>
+      </Dialog>
+    )
+    const view = render(busy(true))
+    await screen.findByRole('dialog')
+    view.rerender(busy(false))
+    release()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: 900 })
   })
 

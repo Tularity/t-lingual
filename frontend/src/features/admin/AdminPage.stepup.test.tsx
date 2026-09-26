@@ -3,6 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { ToastProvider } from '../../design-system'
 import { AdminPage, invitationCreateScope, invitationRevokeScope, userUpdateScope } from './AdminPage'
 
+/** Opens the dropdown labelled `label` and picks the option that reads `option`. */
+async function choose(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+  await user.click(screen.getByRole('button', { name: new RegExp(`^${label} `, 'u') }))
+  await user.click(await screen.findByRole('menuitemradio', { name: option }))
+}
+
 const mocks = vi.hoisted(() => ({
   authorizationBegin: vi.fn(),
   authorizationFinish: vi.fn(),
@@ -79,7 +85,7 @@ describe('administrative passkey step-up', () => {
     await waitFor(() => expect(mocks.revokeInvitation).toHaveBeenCalledWith('grant-2', 'inv_existing'))
 
     await user.click(screen.getByRole('tab', { name: 'People' }))
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Role for Target User' }), 'admin')
+    await choose(user, 'Role for Target User', 'Administrator')
     await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith('grant-3', 'user_1', { role: 'admin' }))
 
     await user.click(screen.getByRole('switch', { name: 'Account access for Target User' }))
@@ -115,9 +121,9 @@ describe('administrative passkey step-up', () => {
     expect(screen.queryByLabelText('Access overview')).not.toBeInTheDocument()
     expect(await screen.findByText('Registration code 01')).toBeInTheDocument()
     expect(screen.queryByText('inv_existing')).not.toBeInTheDocument()
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter invitations' }), 'used')
+    await choose(user, 'Filter invitations', 'Used')
     expect(screen.getByText('No invitations in this view')).toBeInTheDocument()
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter invitations' }), 'active')
+    await choose(user, 'Filter invitations', 'Active')
     expect(screen.getByText('Registration code 01')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AnchorHTMLAttributes } from 'react'
 import { ThemeProvider, ToastProvider } from '../../design-system'
@@ -36,8 +36,29 @@ function session(index: number) {
   }
 }
 
+/** A stand-in for IntersectionObserver that the test drives by hand. */
+const observers: Array<{ callback: IntersectionObserverCallback; targets: Element[]; live: boolean }> = []
+class ManualObserver {
+  record: { callback: IntersectionObserverCallback; targets: Element[]; live: boolean }
+  constructor(callback: IntersectionObserverCallback) {
+    this.record = { callback, targets: [], live: true }
+    observers.push(this.record)
+  }
+  observe(target: Element) { this.record.targets.push(target) }
+  unobserve() {}
+  disconnect() { this.record.live = false }
+}
+/** Brings the end of the list into view. */
+function reachListEnd() {
+  const watcher = observers.filter((entry) => entry.live && entry.targets.some((target) => target.classList.contains('session-more'))).at(-1)
+  if (!watcher) throw new Error('Nothing is watching the end of the list')
+  act(() => watcher.callback([{ isIntersecting: true, target: watcher.targets[0] } as IntersectionObserverEntry], {} as IntersectionObserver))
+}
+
 describe('session catalogue pagination', () => {
   beforeEach(() => {
+    observers.length = 0
+    vi.stubGlobal('IntersectionObserver', ManualObserver)
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }))
@@ -61,18 +82,30 @@ describe('session catalogue pagination', () => {
     removeBrowserStorage('local', 't-lingual:session-view')
   })
 
-  it('loads the next page without replacing already visible sessions', async () => {
+  it('shows the cards a batch at a time as the end of the list comes into view', async () => {
     render(<ThemeProvider><ToastProvider><SessionsPage /></ToastProvider></ThemeProvider>)
 
-    expect(await screen.findByText('Interpretation 0')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Interpretation 0' })).toHaveAttribute('dir', 'auto')
-    await userEvent.click(screen.getByText('Load more sessions'))
+    expect(await screen.findAllByRole('article')).toHaveLength(6)
+    expect(screen.getAllByRole('heading', { name: /^Interpretation / })[0]).toHaveAttribute('dir', 'auto')
+    expect(screen.getByText('Loading more sessions')).toBeInTheDocument()
+    reachListEnd()
+    expect(screen.getAllByRole('article')).toHaveLength(12)
+    expect(mocks.list).toHaveBeenCalledTimes(1)
+  })
 
+  it('loads the next page, once every loaded card is out, without replacing the ones shown', async () => {
+    render(<ThemeProvider><ToastProvider><SessionsPage /></ToastProvider></ThemeProvider>)
+    expect(await screen.findAllByRole('article')).toHaveLength(6)
+    const shown = () => document.querySelectorAll('article.session-card').length
+    while (shown() < 200) reachListEnd()
+    expect(mocks.list).toHaveBeenCalledTimes(1)
+
+    reachListEnd()
     await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ limit: 200, offset: 200 }))
     expect(await screen.findByText('Interpretation 200')).toBeInTheDocument()
     expect(screen.getByText('Interpretation 0')).toBeInTheDocument()
-    expect(screen.queryByText('Load more sessions')).not.toBeInTheDocument()
-  }, 10_000)
+    await waitFor(() => expect(screen.queryByText('Loading more sessions')).not.toBeInTheDocument())
+  }, 20_000)
 
   it('uses the default view and still switches views when storage is blocked', async () => {
     mocks.list.mockResolvedValue({ items: [session(0)], offset: 0, limit: 200 })

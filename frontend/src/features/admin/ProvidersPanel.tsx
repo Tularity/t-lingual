@@ -4,7 +4,7 @@ import { api } from '../../api/client'
 import type { ProviderEndpoints } from '../../api/contracts'
 import { authorizePasskeyAction } from '../../app/passkeyAuthorization'
 import { errorMessage } from '../../app/utils'
-import { Badge, Button, EmptyState, Icon, Input, Skeleton, useToast } from '../../design-system'
+import { Badge, Button, EmptyState, Icon, Input, LoadingState, useToast } from '../../design-system'
 import './providers.css'
 
 type ProviderDraft = Pick<ProviderEndpoints, 'asrUrl' | 'translatorUrl'>
@@ -66,10 +66,10 @@ export function ProvidersPanel() {
     } finally { setSaving(false) }
   }
 
-  if (loading) return <div className="providers-loading" role="status" aria-label={t("Loading provider endpoints")}><Skeleton height={44} /><Skeleton height={245} /></div>
+  if (loading) return <LoadingState label={t("Loading provider endpoints")} />
   if (error || !saved) return <EmptyState icon="warning" title={t("Provider endpoints unavailable")} description={error || t('Try loading the configuration again.')} action={<Button onClick={() => void reload()}>{t("Try again")}</Button>} />
 
-  return <section className="providers-panel" aria-labelledby="providers-title">
+  return <LoadingState loading={false} label={t("Loading provider endpoints")}><section className="providers-panel" aria-labelledby="providers-title">
     <div className="providers-panel__heading"><div><h2 id="providers-title">{t("Provider endpoints")}</h2><p>{t("Changes apply to new recordings. Existing recordings keep their selected providers.")}</p></div><Icon name="shield" size={22} aria-hidden="true" /></div>
     <form className="providers-panel__form" onSubmit={(event) => void submit(event)} aria-busy={saving}>
       <div className="providers-panel__row">
@@ -84,5 +84,5 @@ export function ProvidersPanel() {
       </div>
       <div className="providers-panel__actions"><Button type="button" disabled={!changed || saving} onClick={() => setDraft({ asrUrl: saved.asrUrl, translatorUrl: saved.translatorUrl })}>{t("Discard changes")}</Button><Button variant="primary" type="submit" icon="shield" disabled={!changed} loading={saving}>{t("Verify and save")}</Button></div>
     </form>
-  </section>
+  </section></LoadingState>
 }

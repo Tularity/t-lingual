@@ -1,16 +1,20 @@
 import { useI18n } from '../../app/i18n'
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, startTransition, Suspense, useCallback, useEffect, useState } from 'react'
 import { copyTextToClipboard } from '@t-lingual/ui'
 import { api } from '../../api/client'
 import type { AuditEvent, CreatedInvitation, Invitation, User } from '../../api/contracts'
-import { Badge, Button, Card, Dialog, EmptyState, Icon, Input, Select, Skeleton, Switch as FrameworkSwitch, Tabs, useToast } from '../../design-system'
+import { Badge, Button, Card, Dialog, EmptyState, Icon, Input, LoadingState, Select, SelectOption, Switch as FrameworkSwitch, Tabs, useToast } from '../../design-system'
 import { useAuth } from '../../app/auth'
 import { codeCreateScope } from '../../app/accessCodes'
 import { authorizePasskeyAction } from '../../app/passkeyAuthorization'
 import { errorMessage } from '../../app/utils'
 import { ProvidersPanel } from './ProvidersPanel'
 import './admin.css'
-const SiteSettingsPanel=lazy(()=>import('./SiteSettingsPanel').then(module=>({default:module.SiteSettingsPanel})))
+// Fetched as soon as administration opens, so choosing the tab waits only
+// for the settings themselves — one wait with one loading state, rather than
+// the code and then the data, each restarting the animation.
+const loadSiteSettingsPanel=()=>import('./SiteSettingsPanel')
+const SiteSettingsPanel=lazy(()=>loadSiteSettingsPanel().then(module=>({default:module.SiteSettingsPanel})))
 
 type AdminTab = 'invites' | 'users' | 'audit' | 'providers' | 'site'
 type InviteStatus = 'all' | 'scheduled' | 'active' | 'used' | 'expired' | 'revoked'
@@ -100,6 +104,12 @@ export function AdminPage() {
   const [clock, setClock] = useState(Date.now)
   const adminBusy = creating || mutating
   useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 60_000); return () => window.clearInterval(timer) }, [])
+  useEffect(() => { void loadSiteSettingsPanel() }, [])
+  // A transition, under a boundary that is already showing a tab: a tab whose
+  // code is still settling keeps the current one up for that instant. A
+  // boundary mounted with the tab would show its fallback at once and hold it
+  // for React's minimum reveal time, the panel's own wait only starting after.
+  const openTab = (next: AdminTab) => startTransition(() => setTab(next))
 
   const applyOverview = useCallback((overview: Awaited<ReturnType<typeof fetchAdminOverview>>) => {
     setInvites(overview.invites)
@@ -200,23 +210,23 @@ export function AdminPage() {
 
   return <>
     <h1 className="sr-only">{t("Administration")}</h1>
-    <div className="admin-topline"><Tabs label={t("Administration sections")} value={tab} onChange={setTab} panelId={!loading && !error ? 'administration-panel' : undefined} items={adminTabs.map((item) => ({ ...item, label: t(item.label) }))} /></div>
-    {loading ? <div className="admin-loading" role="status" aria-label={t("Loading administration")}><Skeleton height={130} /><Skeleton height={340} /></div> : error ? <Card><EmptyState icon="warning" title={t("Administration unavailable")} description={error} action={<Button icon="refresh" onClick={() => void load()}>{t("Try again")}</Button>} /></Card> : <div id="administration-panel" className="admin-panel" role="tabpanel" aria-label={t('{section} administration', { section: t(adminTabs.find((item) => item.value === tab)?.label ?? 'Administration') })} aria-busy={adminBusy || loadingMore !== null}>
+    <div className="admin-topline"><Tabs label={t("Administration sections")} value={tab} onChange={openTab} panelId={!loading && !error ? 'administration-panel' : undefined} items={adminTabs.map((item) => ({ ...item, label: t(item.label) }))} /></div>
+    <LoadingState loading={loading} label={t("Loading administration")}>{loading ? null : error ? <Card><EmptyState icon="warning" title={t("Administration unavailable")} description={error} action={<Button icon="refresh" onClick={() => void load()}>{t("Try again")}</Button>} /></Card> : <Suspense fallback={<LoadingState label={t('Loading administration')} />}><div key={tab} id="administration-panel" className="admin-panel" role="tabpanel" aria-label={t('{section} administration', { section: t(adminTabs.find((item) => item.value === tab)?.label ?? 'Administration') })} aria-busy={adminBusy || loadingMore !== null}>
       {tab === 'providers' && <ProvidersPanel />}
-      {tab === 'site' && <Suspense fallback={<Skeleton height={320}/>}><SiteSettingsPanel /></Suspense>}
+      {tab === 'site' && <SiteSettingsPanel />}
       {tab === 'invites' && <>
         <Card className="invite-create invite-create--codes" raised>
           <div className="invite-create__icon"><Icon name="key" size={24}/></div>
           <div className="invite-create__copy"><h2>{t('Create an access code')}</h2><p>{t('One code field handles new accounts and temporary sign-in. Every code can be used once.')}</p></div>
           <div className="invite-create__fields">
-            <Select label={t('Code purpose')} value={codeKind} disabled={adminBusy} onChange={event=>setCodeKind(event.target.value as typeof codeKind)}><option value="registration">{t('Register a new account')}</option><option value="login">{t('Sign in to an existing account')}</option></Select>
-            {codeKind==='login'&&<Select label={t('Account to sign in')} value={codeUser} disabled={adminBusy} onChange={event=>setCodeUser(event.target.value)}><option value="">{t('Choose a user')}</option>{users.filter(user=>user.status==='active').map(user=><option key={user.id} value={user.id}>{user.displayName} · @{user.username}</option>)}</Select>}
+            <Select label={t('Code purpose')} value={codeKind} disabled={adminBusy} onValueChange={(value) =>setCodeKind(value as typeof codeKind)}><SelectOption value="registration">{t('Register a new account')}</SelectOption><SelectOption value="login">{t('Sign in to an existing account')}</SelectOption></Select>
+            {codeKind==='login'&&<Select label={t('Account to sign in')} value={codeUser} disabled={adminBusy} onValueChange={(value) =>setCodeUser(value)}><SelectOption value="">{t('Choose a user')}</SelectOption>{users.filter(user=>user.status==='active').map(user=><SelectOption key={user.id} value={user.id}>{user.displayName} · @{user.username}</SelectOption>)}</Select>}
             <Input type="datetime-local" label={t('Active from (optional)')} hint={t('Leave empty to activate immediately. Times use your local timezone.')} value={notBefore} disabled={adminBusy} onChange={event=>setNotBefore(event.target.value)}/>
-            {codeKind==='registration'?<Select label={t('Code valid for')} value={expiry} disabled={adminBusy} onChange={event=>setExpiry(event.target.value)}><option value="1">{t('1 hour')}</option><option value="24">{t('24 hours')}</option><option value="72">{t('3 days')}</option><option value="168">{t('7 days')}</option></Select>:<Select label={t('Code valid for')} value={loginMinutes} disabled={adminBusy} onChange={event=>setLoginMinutes(event.target.value)}>{['5','10','15'].map(value=><option key={value} value={value}>{t('{count} minutes',{count:Number(value)})}</option>)}</Select>}
+            {codeKind==='registration'?<Select label={t('Code valid for')} value={expiry} disabled={adminBusy} onValueChange={(value) =>setExpiry(value)}><SelectOption value="1">{t('1 hour')}</SelectOption><SelectOption value="24">{t('24 hours')}</SelectOption><SelectOption value="72">{t('3 days')}</SelectOption><SelectOption value="168">{t('7 days')}</SelectOption></Select>:<Select label={t('Code valid for')} value={loginMinutes} disabled={adminBusy} onValueChange={(value) =>setLoginMinutes(value)}>{['5','10','15'].map(value=><SelectOption key={value} value={value}>{t('{count} minutes',{count:Number(value)})}</SelectOption>)}</Select>}
           </div>
           <Button variant="primary" icon="plus" loading={creating} disabled={mutating||codeKind==='login'&&!codeUser} onClick={event=>{const rect=event.currentTarget.getBoundingClientRect();setCodeDialogOrigin({x:rect.left+rect.width/2,y:rect.top+rect.height/2});void createInvitation()}}>{t('Verify and generate')}</Button>
         </Card>
-        <div className="admin-section-heading"><div><h2>{t("Access code history")} <span className="admin-section-count">{activeCount} {t("active")}</span></h2><p>{t("Codes are only visible when first generated. You can revoke unused codes here.")}</p></div><Select label={t("Filter invitations")} value={inviteFilter} onChange={(event) => setInviteFilter(event.target.value as InviteStatus)}><option value="all">{t("All invitations")}</option><option value="active">{t("Active")}</option><option value="scheduled">{t("Scheduled")}</option><option value="used">{t("Used")}</option><option value="expired">{t("Expired")}</option><option value="revoked">{t("Revoked")}</option></Select></div>
+        <div className="admin-section-heading"><div><h2>{t("Access code history")} <span className="admin-section-count">{activeCount} {t("active")}</span></h2><p>{t("Codes are only visible when first generated. You can revoke unused codes here.")}</p></div><Select label={t("Filter invitations")} value={inviteFilter} onValueChange={(value) => setInviteFilter(value as InviteStatus)}><SelectOption value="all">{t("All invitations")}</SelectOption><SelectOption value="active">{t("Active")}</SelectOption><SelectOption value="scheduled">{t("Scheduled")}</SelectOption><SelectOption value="used">{t("Used")}</SelectOption><SelectOption value="expired">{t("Expired")}</SelectOption><SelectOption value="revoked">{t("Revoked")}</SelectOption></Select></div>
         {filteredInvites.length === 0 ? <Card><EmptyState icon="key" title={invites.length ? t('No invitations in this view') : t('No invitations yet')} description={invites.length ? t('Choose another status to see invitations.') : t('Generate a code to invite the first person.')} /></Card> : <Card className="invite-list" role="list" aria-label={t("Access code history")}>{filteredInvites.map((invite, index) => {
           const status = invitationStatus(invite, clock)
           const usedName = invite.usedBy ? displayUser(invite.usedBy) : t('a user')
@@ -236,14 +246,14 @@ export function AdminPage() {
           return <div className="user-row" key={user.id}>
             <div className="admin-user"><span aria-hidden="true">{user.displayName.charAt(0).toUpperCase()}</span><div><strong><bdi>{user.displayName}</bdi>{isSelf && <Badge tone="accent">{t("You")}</Badge>}</strong><small>@<bdi>{user.username}</bdi></small></div></div>
             <div className="user-activity"><strong>{localDate(user.createdAt, { dateStyle: 'medium' })}</strong><small>{t("Updated")} {localDate(user.updatedAt)}</small></div>
-            <Select label={t('Role for {name}', { name: user.displayName })} value={user.role} disabled={isSelf || adminBusy} onChange={(event) => void updateUser(user, { role: event.target.value as User['role'] })}><option value="user">{t("Member")}</option><option value="admin">{t("Administrator")}</option></Select>
+            <Select label={t('Role for {name}', { name: user.displayName })} value={user.role} disabled={isSelf || adminBusy} onValueChange={(value) => void updateUser(user, { role: value as User['role'] })}><SelectOption value="user">{t("Member")}</SelectOption><SelectOption value="admin">{t("Administrator")}</SelectOption></Select>
             <Switch ariaLabel={t('Account access for {name}', { name: user.displayName })} label={user.status === 'disabled' ? t('Disabled') : t('Enabled')} checked={user.status === 'active'} disabled={isSelf || adminBusy} onChange={(enabled) => { if (!enabled) setDisableTarget(user); else void updateUser(user, { status: 'active' }) }} />
           </div>
         })}</Card>}
         {loadMoreButton('users', 'Load more people')}
       </>}
       {tab === 'audit' && <>
-        <div className="admin-section-heading"><div><h2>{t("Access activity")} <span className="admin-section-count">{audit.length}{hasMore.audit ? '+' : ''} {t("events")}</span></h2><p>{t("Recent invitation, role and account status changes recorded by the server.")}</p></div><Select label={t("Filter activity")} value={auditFilter} onChange={(event) => setAuditFilter(event.target.value)}><option value="all">{t("All activity")}</option><option value="invitation.">{t("Invitations")}</option><option value="user.">{t("Accounts")}</option></Select></div>
+        <div className="admin-section-heading"><div><h2>{t("Access activity")} <span className="admin-section-count">{audit.length}{hasMore.audit ? '+' : ''} {t("events")}</span></h2><p>{t("Recent invitation, role and account status changes recorded by the server.")}</p></div><Select label={t("Filter activity")} value={auditFilter} onValueChange={(value) => setAuditFilter(value)}><SelectOption value="all">{t("All activity")}</SelectOption><SelectOption value="invitation.">{t("Invitations")}</SelectOption><SelectOption value="user.">{t("Accounts")}</SelectOption></Select></div>
         {filteredAudit.length === 0 ? <Card><EmptyState icon="history" title={audit.length ? t('No activity in this view') : t('No activity yet')} description={audit.length ? t('Choose another activity type.') : t('Access changes will appear here after the first action.')} /></Card> : <Card className="audit-list">{filteredAudit.map((event) => <article className="audit-row" key={event.id}>
           <span className="audit-row__icon"><Icon name={event.action.startsWith('user.') ? 'user' : 'key'} size={18} /></span>
           <div className="audit-row__main"><strong>{actionTitle(event.action, t)}</strong><p><bdi>{describeTarget(event)}</bdi></p>{auditDetail(event, t, localDate) && <small>{auditDetail(event, t, localDate)}</small>}</div>
@@ -251,7 +261,7 @@ export function AdminPage() {
         </article>)}</Card>}
         {loadMoreButton('audit', 'Load more activity')}
       </>}
-    </div>}
+    </div></Suspense>}</LoadingState>
     <Dialog open={!!created} origin={codeDialogOrigin} onClose={() => setCreated(null)} title={t("Copy this code now")} description={t("The six-digit code is shown once. Share it privately with its intended recipient.")} footer={<><Button onClick={() => setCreated(null)}>{t("Done")}</Button><Button variant="primary" icon="copy" onClick={() => created && void copyCode(created.code)}>{t("Copy code")}</Button></>}><button type="button" className="confirm-code" aria-label={t("Copy code")} onClick={() => created && void copyCode(created.code)}>{created?.code}</button><p className="confirm-code-hint">{created&&t('Active from {date}',{date:localDate(created.invitation.notBefore??created.invitation.createdAt)})}<br/>{t("Expires")} {created && localDate(created.invitation.expiresAt)} {t("· One use only")}</p></Dialog>
     <Dialog open={!!revokeTarget} onClose={() => !mutating && setRevokeTarget(null)} title={t("Revoke invitation?")} description={t("Verify your passkey to make this unused invitation stop working immediately.")} footer={<><Button disabled={mutating} onClick={() => setRevokeTarget(null)}>{t("Cancel")}</Button><Button variant="danger" icon="key" loading={mutating} onClick={() => void revoke()}>{t("Verify and revoke")}</Button></>}><div className="delete-summary"><Icon name="key" size={20} /><strong>{t("Created")} {revokeTarget && localDate(revokeTarget.createdAt)}</strong></div></Dialog>
     <Dialog open={!!disableTarget} onClose={() => !mutating && setDisableTarget(null)} title={t("Disable this account?")} description={t("Verify your passkey to end this person’s access immediately. Their stored sessions and transcripts remain private to them.")} footer={<><Button disabled={mutating} onClick={() => setDisableTarget(null)}>{t("Cancel")}</Button><Button variant="danger" icon="key" loading={mutating} onClick={() => disableTarget && void updateUser(disableTarget, { status: 'disabled' })}>{t("Verify and disable")}</Button></>}><div className="delete-summary"><Icon name="user" size={20} /><strong><bdi>{disableTarget?.displayName}</bdi></strong></div></Dialog>

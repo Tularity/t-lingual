@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider, ToastProvider } from '../design-system'
 import { RouterProvider } from './router'
-import { AppShell } from './AppShell'
+import { AppShell, nextThemeMode } from './AppShell'
 
 const auth = vi.hoisted(() => ({
   logout: vi.fn(async () => undefined),
@@ -75,19 +75,34 @@ describe('application shell navigation', () => {
     expect(screen.queryByRole('dialog', { name: 'Mobile navigation' })).not.toBeInTheDocument()
   })
 
-  it('offers language and theme menus in both desktop and mobile headers', async () => {
-    const user = userEvent.setup()
+  it('offers the language menu and the theme toggle in both desktop and mobile headers', () => {
     renderShell()
     const desktop = document.querySelector('.app-topbar')!
     const mobile = document.querySelector<HTMLElement>('.mobile-header')!
     mobile.style.display = 'grid'
     expect(within(desktop as HTMLElement).getByRole('button', { name: 'Interface language' })).toContainElement(desktop.querySelector('img[src="/flags/lang-en-au.svg"]'))
     expect(within(mobile as HTMLElement).getByRole('button', { name: 'Interface language' })).toBeInTheDocument()
-    expect(within(mobile as HTMLElement).getByRole('button', { name: 'Colour theme' })).toBeInTheDocument()
-    await user.click(within(desktop as HTMLElement).getByRole('button', { name: 'Colour theme' }))
-    expect(screen.getByRole('menu', { name: 'Colour theme' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitemradio', { name: /System theme/ })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByRole('menuitemradio', { name: 'Dark' })).toBeInTheDocument()
+    // The toggle says which mode it is in; there is no menu behind it.
+    for (const header of [desktop, mobile]) {
+      const toggle = within(header as HTMLElement).getByRole('button', { name: 'Colour theme: System theme' })
+      expect(toggle).not.toHaveAttribute('aria-haspopup')
+    }
+    // Neither header has a guide button of its own any more.
+    expect(within(desktop as HTMLElement).queryByRole('button', { name: 'Workspace guide' })).toBeNull()
+    expect(within(mobile as HTMLElement).queryByRole('button', { name: 'Workspace guide' })).toBeNull()
+  })
+
+  it('steps the theme through following the system, light and dark', () => {
+    expect(nextThemeMode('system')).toBe('light')
+    expect(nextThemeMode('light')).toBe('dark')
+    expect(nextThemeMode('dark')).toBe('system')
+  })
+
+  it('opens the workspace guide from the logo at the top of the navigation', async () => {
+    const user = userEvent.setup()
+    renderShell()
+    await user.click(within(document.querySelector('.app-sidebar') as HTMLElement).getByRole('button', { name: 'Workspace guide' }))
+    expect(await screen.findByRole('dialog', { name: 'A little help, right here' })).toBeInTheDocument()
   })
   it('moves focus to main content after drawer navigation', async () => {
     const user = userEvent.setup()

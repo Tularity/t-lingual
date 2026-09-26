@@ -3,7 +3,7 @@ import { Markdown } from '@t-lingual/ui'
 import { api } from '../../api/client'
 import { useI18n } from '../../app/i18n'
 import { errorMessage } from '../../app/utils'
-import { Button, Dialog, EmptyState, Skeleton } from '../../design-system'
+import { Button, Dialog, EmptyState, LoadingState } from '../../design-system'
 import './registration-help.css'
 
 export function RegistrationHelpDialog({open,onClose,origin}:{open:boolean;onClose:()=>void;origin?:{x:number;y:number}}) {
@@ -18,6 +18,6 @@ export function RegistrationHelpDialog({open,onClose,origin}:{open:boolean;onClo
     return()=>{active=false}
   },[open,attempt])
   return <Dialog open={open} origin={origin} size="full" title={t('How to register')} onClose={onClose} footer={<Button variant="primary" onClick={onClose}>{t('Done')}</Button>}>
-    <div className="registration-help">{error?<EmptyState icon="warning" title={t('Registration help could not be loaded')} description={t(error)} action={<Button onClick={()=>setAttempt(value=>value+1)}>{t('Try again')}</Button>}/>:content===null?<div role="status" aria-label={t('Loading registration help')}><Skeleton height={28} width="50%"/><Skeleton height={200}/></div>:<Markdown source={content}/>}</div>
+    <div className="registration-help">{error?<EmptyState icon="warning" title={t('Registration help could not be loaded')} description={t(error)} action={<Button onClick={()=>setAttempt(value=>value+1)}>{t('Try again')}</Button>}/>:<LoadingState loading={content===null} size={140} label={t('Loading registration help')}>{content!==null&&<Markdown source={content}/>}</LoadingState>}</div>
   </Dialog>
 }

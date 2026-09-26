@@ -148,7 +148,7 @@ restates them and adds `pointer-events: none`. The hook waits on
 `getAnimations({ subtree: true })`, so a finite child animation still running
 while exiting — a toast's countdown — holds the node in the DOM until it ends:
 cancel it under `[data-state='exiting']`. Infinite loops are skipped by the
-hook itself, but still cancel them there (as Mark, Progress and Skeleton do),
+hook itself, but still cancel them there (as CompactMark, Progress and Skeleton do),
 because a loop that keeps running on a surface that is fading out reads as a
 thing that has not noticed it is leaving.
 
@@ -162,7 +162,7 @@ under `(prefers-reduced-motion: no-preference)`.
 
 No `var()` inside a `@keyframes` block. It makes the animation discrete. Put
 the per-instance variation in `animation-delay` or `animation-duration` outside
-the keyframes, as `Mark.css` does.
+the keyframes, as `CompactMark.css` does.
 
 ## Dark theme and forced colors
 

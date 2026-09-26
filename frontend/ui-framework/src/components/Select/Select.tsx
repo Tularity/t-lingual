@@ -1,82 +1,155 @@
-import { forwardRef, type ReactNode, type SelectHTMLAttributes } from 'react'
+import {
+  Children,
+  Fragment,
+  forwardRef,
+  isValidElement,
+  useEffect,
+  useId,
+  useState,
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import { cx } from '../../utils/cx'
 import { Icon } from '../../icons/Icon'
+import { useControllableState } from '../../hooks/useControllableState'
 import { useFieldContext } from '../Field/Field'
+import { Menu, MenuGroup, MenuRadioGroup, MenuRadioItem } from '../Menu/Menu'
 import './Select.css'
 
 export type SelectSize = 'xs' | 'sm' | 'md' | 'lg'
 
-export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
-  /**
-   * Control height. This shadows the native `size` attribute, which asks for a
-   * number of visible rows and turns the control into an open list box — a
-   * different component, not a variant of this one.
-   */
+export interface SelectOptionProps {
+  value: string
+  /** What the row shows. Also what the closed field shows once chosen. */
+  children?: ReactNode
+  /** Leading adornment, in the row and in the closed field. Decorative. */
+  icon?: ReactNode
+  disabled?: boolean
+  /** Type-ahead text, for a label that is not a plain string. */
+  textValue?: string
+}
+
+/** One choice. Only meaningful inside a `Select`. */
+export function SelectOption({ value, children, icon, disabled, textValue }: SelectOptionProps) {
+  return (
+    <MenuRadioItem value={value} icon={icon} disabled={disabled} textValue={textValue}>
+      {children}
+    </MenuRadioItem>
+  )
+}
+
+export interface SelectGroupProps {
+  /** Section heading; it names the group for assistive technology too. */
+  label: ReactNode
+  children?: ReactNode
+}
+
+/** A labelled run of options inside a `Select`. */
+export function SelectGroup({ label, children }: SelectGroupProps) {
+  return <MenuGroup label={label}>{children}</MenuGroup>
+}
+
+/** Every option element, in order, wherever it sits among groups and fragments. */
+function collectOptions(children: ReactNode, into: ReactElement<SelectOptionProps>[] = []) {
+  for (const child of Children.toArray(children)) {
+    if (!isValidElement(child)) continue
+    if (child.type === SelectOption) into.push(child as ReactElement<SelectOptionProps>)
+    else if (child.type === SelectGroup || child.type === Fragment) {
+      collectOptions((child.props as { children?: ReactNode }).children, into)
+    }
+  }
+  return into
+}
+
+export interface SelectProps
+  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'value' | 'defaultValue' | 'onChange' | 'children'> {
+  value?: string
+  defaultValue?: string
+  onValueChange?: (value: string) => void
+  /** `SelectOption` and `SelectGroup` elements. */
+  children?: ReactNode
+  /** Control height; matches Button so the two share a baseline in a toolbar. */
   size?: SelectSize
-  /** Renders a disabled first option that reads as an empty state. */
-  placeholder?: string
+  /** Shown, quieter, while no option carries the current value. */
+  placeholder?: ReactNode
   invalid?: boolean
   fullWidth?: boolean
-  /** Overrides the default chevron. Decorative; never receives pointer events. */
+  /** Overrides the default chevron. Decorative. */
   chevron?: ReactNode
+  /** Draws the closed field's content for a value, instead of the option's own. */
+  renderValue?: (value: string) => ReactNode
+  /** Submitted with a surrounding form under this name, as a hidden input. */
+  name?: string
+  /** Extra class for the open list, for a consumer that sizes its rows. */
+  menuClassName?: string
 }
 
 /**
- * A styled native `<select>`.
+ * A single choice from a short list, drawn entirely by the framework.
  *
- * WHY NOT A CUSTOM LISTBOX
- * ------------------------
- * On mobile the native control opens the platform picker — the iOS wheel, the
- * Android bottom sheet — which is dramatically better than anything a
- * div-based reimplementation produces: it is the interaction the user already
- * knows, it is sized for a thumb, and it never fights the on-screen keyboard or
- * the visual viewport. On the desktop the same element gets keyboard type-ahead
- * for free, including the multi-character matching that hand-rolled listboxes
- * almost always get wrong. The cost is that the open popup cannot be styled;
- * that is a price worth paying, and a searchable Combobox is the component to
- * reach for when the option list is genuinely too long for this one.
+ * The closed control is a field like Input; opening it shows the framework's
+ * own menu, with the chosen row marked by the same leading bar every
+ * single-choice menu uses — never the platform's popup, whose look, font and
+ * selection mark cannot be styled and would break with everything around it.
+ * The menu inherits the Menu keyboard model (arrows, Home/End, type-ahead,
+ * Escape back to the field, Tab onward), opens on the current choice, and is
+ * never narrower than the field that opened it.
  *
- * The popup follows the theme without any work here because `color-scheme` is
- * set on the token layer and inherits down to the control.
+ * The field's accessible name is its label followed by the current choice, so
+ * a screen reader announces what is selected before the list is opened.
  *
  * LAYOUT PROPS GO TO THE WRAPPER
  * ------------------------------
- * `className` and `style` land on the positioning wrapper rather than on the
- * `<select>`, because the wrapper is the box a consumer means when they size or
- * space this component; everything else, including `ref`, goes to the select so
- * form libraries and DOM measurement see the real control.
+ * `className` and `style` land on the wrapper, because that is the box a
+ * consumer means when they size or space this component; everything else,
+ * including `ref`, goes to the button that is the real control.
  */
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
+export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select(
   {
+    value: valueProp,
+    defaultValue,
+    onValueChange,
+    children,
     size = 'md',
     placeholder,
     invalid,
+    disabled,
     fullWidth = false,
     chevron,
-    multiple,
-    disabled,
-    required,
+    renderValue,
+    name,
+    menuClassName,
     id,
     className,
     style,
-    children,
-    value,
-    defaultValue,
     ...rest
   },
   ref,
 ) {
   const field = useFieldContext()
-
-  const controlId = id ?? field?.id
+  const autoId = useId()
+  const controlId = id ?? field?.id ?? `${autoId}select`
+  const valueId = `${autoId}value`
   const isDisabled = disabled ?? field?.disabled ?? false
-  const isRequired = required ?? field?.required ?? false
   const isInvalid = invalid ?? field?.invalid ?? false
+
+  const [value, setValue] = useControllableState<string | undefined>({
+    value: valueProp,
+    defaultValue,
+    onChange: (next) => {
+      if (next !== undefined) onValueChange?.(next)
+    },
+  })
+  const [open, setOpen] = useState(false)
+  const [menuNode, setMenuNode] = useState<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState<number>()
 
   if (
     import.meta.env?.DEV &&
     !field &&
-    !controlId &&
+    !id &&
     !rest['aria-label'] &&
     !rest['aria-labelledby']
   ) {
@@ -86,6 +159,24 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     )
   }
 
+  // Opens on the current choice, highlighted and scrolled into view, as a
+  // select does. Runs after the menu's own opening focus, which it replaces.
+  useEffect(() => {
+    if (!open || !menuNode) return
+    const current = menuNode.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
+    current?.focus({ preventScroll: true })
+    current?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, menuNode])
+
+  const options = collectOptions(children)
+  const chosen = options.find((option) => option.props.value === value) ?? null
+  const empty = !chosen && renderValue === undefined
+  const content = renderValue && value !== undefined ? renderValue(value) : chosen ? chosen.props.children : placeholder
+
+  // The label, or whatever names the control, then the value. A control named
+  // by `aria-label` refers to itself, which is how its own label gets read.
+  const nameSource = field?.labelId ?? rest['aria-labelledby'] ?? (rest['aria-label'] ? controlId : undefined)
+
   return (
     <span
       data-tl="select"
@@ -93,52 +184,68 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       data-invalid={isInvalid || undefined}
       data-disabled={isDisabled || undefined}
       data-full-width={fullWidth || undefined}
-      data-multiple={multiple || undefined}
       className={cx('tl-select', className)}
       style={style}
     >
-      <select
-        {...rest}
-        ref={ref}
-        id={controlId}
-        className="tl-select__control"
-        multiple={multiple}
-        disabled={isDisabled}
-        // Native `required` only when this control asked for it. A Field's
-        // `required` is announced through `aria-required` instead, because the
-        // UA's validation bubble cannot be styled or translated and would
-        // compete with the error region the Field already renders.
-        required={required}
-        value={value}
-        // Selecting the placeholder is the only way it stays visible: the
-        // "ask for a reset" algorithm skips disabled options, so without this
-        // the browser would open on the first real option instead.
-        defaultValue={
-          defaultValue ?? (placeholder !== undefined && value === undefined ? '' : undefined)
+      <Menu
+        ref={setMenuNode}
+        open={open}
+        onOpenChange={(next) => {
+          if (next) setWidth(document.getElementById(controlId)?.getBoundingClientRect().width)
+          setOpen(next)
+        }}
+        placement="bottom-start"
+        className={cx('tl-select__menu', menuClassName)}
+        style={width ? ({ minInlineSize: `${width}px` } as CSSProperties) : undefined}
+        trigger={
+          <button
+            {...rest}
+            ref={ref}
+            type="button"
+            id={controlId}
+            className="tl-select__control"
+            disabled={isDisabled}
+            data-empty={empty || undefined}
+            aria-labelledby={nameSource ? `${nameSource} ${valueId}` : undefined}
+            aria-invalid={isInvalid || undefined}
+            aria-describedby={cx(rest['aria-describedby'], field?.describedBy)}
+          >
+            {chosen?.props.icon && !renderValue && (
+              <span className="tl-select__icon" aria-hidden="true">
+                {chosen.props.icon}
+              </span>
+            )}
+            {/* The field is as wide as its widest choice, as a native select
+              * is, so picking a shorter one never makes the layout jump: every
+              * choice is laid, unseen, into the same grid cell as the value. A
+              * full-width field has its width already and skips them. */}
+            <span className="tl-select__face">
+              <span id={valueId} className="tl-select__value">
+                {content}
+              </span>
+              {!fullWidth &&
+                options.map((option) => (
+                  <span key={option.props.value} className="tl-select__sizer" aria-hidden="true">
+                    {renderValue ? renderValue(option.props.value) : option.props.children}
+                  </span>
+                ))}
+              {!fullWidth && placeholder != null && (
+                <span className="tl-select__sizer" aria-hidden="true">
+                  {placeholder}
+                </span>
+              )}
+            </span>
+            <span className="tl-select__chevron" aria-hidden="true">
+              {chevron ?? <Icon name="chevronDown" />}
+            </span>
+          </button>
         }
-        aria-required={isRequired || undefined}
-        aria-invalid={isInvalid || undefined}
-        // `cx` is a space joiner, which is exactly the shape of an ARIA id list.
-        aria-describedby={cx(rest['aria-describedby'], field?.describedBy)}
       >
-        {placeholder !== undefined && (
-          // `disabled` is what stops it being chosen again once a real option
-          // has been picked; `hidden` is what keeps it out of the open list in
-          // the engines that honour it. An empty value is also what makes this
-          // the element's placeholder label option, so `required` correctly
-          // treats it as "nothing selected".
-          <option value="" disabled hidden data-placeholder="">
-            {placeholder}
-          </option>
-        )}
-        {children}
-      </select>
-
-      {!multiple && (
-        <span className="tl-select__chevron" aria-hidden="true">
-          {chevron ?? <Icon name="chevronDown" />}
-        </span>
-      )}
+        <MenuRadioGroup value={value} onValueChange={setValue}>
+          {children}
+        </MenuRadioGroup>
+      </Menu>
+      {name && <input type="hidden" name={name} value={value ?? ''} />}
     </span>
   )
 })

@@ -1,0 +1,73 @@
+@layer tl.components {
+  /* While waiting: the box the content will occupy, held open so nothing
+   * below it jumps when the content arrives. Once it has arrived this element
+   * is only a positioning context for the plate leaving over it. */
+  .tl-loading-state {
+    --_plate: calc(var(--_size, 160px) + var(--tl-space-9) * 2);
+    position: relative;
+  }
+
+  .tl-loading-state[data-state='loading'] {
+    display: grid;
+    place-items: center;
+    min-block-size: calc(var(--_plate) * 1.5);
+  }
+
+  .tl-loading-state[data-fill],
+  .tl-loading-state[data-fill] > .tl-loading-state__content {
+    block-size: 100%;
+  }
+
+  /* The plate: a translucent rounded square the logo rests on. It arrives in
+   * a beat — a quick fade and a small settle — so the wait reads as begun
+   * the moment it shows. */
+  .tl-loading-state__plate {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: var(--tl-space-5);
+    inline-size: min(var(--_plate), 80vw);
+    aspect-ratio: 1;
+    padding: var(--tl-space-7);
+    border: 1px solid color-mix(in oklab, var(--tl-border) 30%, transparent);
+    border-radius: var(--tl-radius-2xl);
+    background: color-mix(in oklab, var(--tl-surface) 18%, transparent);
+    box-shadow: 0 6px 24px color-mix(in oklab, var(--tl-text) 6%, transparent);
+    backdrop-filter: blur(6px);
+    opacity: 1;
+    scale: 1;
+    transition:
+      opacity var(--tl-duration-sm) var(--tl-ease-out),
+      scale var(--tl-duration-lg) var(--tl-ease-signature);
+  }
+
+  @starting-style {
+    .tl-loading-state__plate {
+      opacity: 0;
+      scale: var(--tl-zoom-subtle);
+    }
+  }
+
+  .tl-loading-state__mark {
+    inline-size: min(var(--_size, 160px), 60vw);
+  }
+
+  .tl-loading-state__label {
+    max-inline-size: 100%;
+    margin: 0;
+    overflow: hidden;
+    color: var(--tl-text-secondary);
+    font-size: var(--tl-text-xs);
+    font-weight: var(--tl-weight-medium);
+    letter-spacing: var(--tl-tracking-wide);
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The plate on its way out, pinned over the content that replaced it. */
+  .tl-loading-state__plate[data-leaving] {
+    z-index: 1;
+    pointer-events: none;
+  }
+}

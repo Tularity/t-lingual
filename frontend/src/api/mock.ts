@@ -19,7 +19,30 @@ import { codeCreateScope } from '../app/accessCodes'
 import type { RegistrationInput, CodeResult, CreateCodeInput, CreatedCode } from './contracts'
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from '../platform/storage'
 
-const wait = (milliseconds = 220) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+/** Demo review aid: `?latency=<ms>` makes every call take at least that long
+ *  for the rest of the tab's session (`?latency=0` resets), so the loading
+ *  states can be seen; the demo answers too quickly to show them otherwise. */
+const demoLatency = () => {
+  const requested = new URLSearchParams(window.location.search).get('latency')
+  if (requested !== null) window.sessionStorage.setItem('t-lingual:demo-latency', String(Math.min(Math.max(Number(requested) || 0, 0), 10_000)))
+  return Number(window.sessionStorage.getItem('t-lingual:demo-latency')) || 0
+}
+/** Demo review aid: these sign-in codes, reusable and never checked against
+ *  the invitations, sign in as the demo user to a workspace that takes this
+ *  long to load — every call after them waits until then — so the sign-in
+ *  animation can be seen going round more than once before it hands over. */
+const slowWorkspaceCodes: Record<string, number> = { '111111': 3_000, '222222': 7_000, '333333': 9_000, '444444': 25_000 }
+/** Demo review aid: this code, also reusable, opens a fresh registration
+ *  invitation each time, so the whole of registering a new account — name,
+ *  passkey, quick setup — can be walked through again and again. */
+const demoRegistrationCode = '555555'
+let workspaceReadyAt = 0
+const wait = (milliseconds = 220) => new Promise((resolve) => window.setTimeout(resolve, Math.max(milliseconds, demoLatency(), workspaceReadyAt - Date.now())))
+/** Demo review aid: `?boot=<ms>` holds the session check, up to a minute, so the first-load screen can be seen. */
+const sessionCheckDelay = () => {
+  const requested = Number(new URLSearchParams(window.location.search).get('boot'))
+  return Number.isFinite(requested) && requested > 0 ? Math.min(requested, 60_000) : 120
+}
 /* @__NO_SIDE_EFFECTS__ */
 const isoBefore = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
 const clone = <T,>(value: T): T => structuredClone(value)
@@ -252,6 +275,16 @@ export class MockApi implements ApiService {
 
   auth = {
     code: async (code:string):Promise<CodeResult> => {
+      const slow=slowWorkspaceCodes[code.trim()]
+      if(slow!==undefined){await wait();writeBrowserStorage('session',authKey,demoUser.id);workspaceReadyAt=Date.now()+slow;return {...authSession(this.currentUser()),kind:'login'}}
+      if(code.trim()===demoRegistrationCode){
+        await wait()
+        const invitation:Invitation={id:`inv_${crypto.randomUUID()}`,kind:'registration',notBefore:now(),createdBy:null,createdAt:now(),expiresAt:new Date(Date.now()+3600000).toISOString(),usedAt:null,usedBy:null,revokedAt:null}
+        invitationData=[invitation,...invitationData];persist()
+        const registrationTicket=crypto.randomUUID(),expiresAt=new Date(Date.now()+300000).toISOString()
+        this.registrationTickets.set(registrationTicket,{id:invitation.id,expiresAt})
+        return {kind:'registration',registrationTicket,expiresAt}
+      }
       await wait();this.countCodeAttempt()
       const digest=await codeDigest(code.trim())
       const invitation=invitationData.find(item=>invitationDigests[item.id]===digest&&!item.usedAt&&!item.revokedAt&&Date.parse(item.expiresAt)>Date.now()&&(!item.notBefore||Date.parse(item.notBefore)<=Date.now()))
@@ -270,7 +303,7 @@ export class MockApi implements ApiService {
       this.registrationTickets.set(registrationTicket,{id:invitation.id,expiresAt})
       return {kind:'registration',registrationTicket,expiresAt}
     },
-    me: async () => { await wait(120); return authSession(this.currentUser()) },
+    me: async () => { await wait(sessionCheckDelay()); return authSession(this.currentUser()) },
     loginBegin: async () => { await wait(); const result = mockOptions(); this.pendingLogin.add(result.ceremonyToken); return { ceremonyToken: result.ceremonyToken, expiresAt: result.expiresAt, options: { publicKey: { challenge: result.options.publicKey.challenge, timeout: result.options.publicKey.timeout, rpId: result.options.publicKey.rp.id, userVerification: 'required' as const } } } },
     loginFinish: async (ceremonyToken: string, credential: SerializedCredential) => { void credential; await wait(); if (!this.pendingLogin.delete(ceremonyToken)) throw new Error('Passkey ceremony expired'); writeBrowserStorage('session', authKey, demoUser.id); return authSession(this.currentUser()) },
     registrationBegin: async (input: RegistrationInput) => {

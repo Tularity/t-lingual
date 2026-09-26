@@ -4,6 +4,12 @@ import { ToastProvider } from '../../design-system'
 import type { SessionShare, ShareInput } from '../../api/contracts'
 import { SharingDialog } from './SharingDialog'
 
+/** Opens the dropdown labelled `label` and picks the option that reads `option`. */
+async function choose(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+  await user.click(screen.getByRole('button', { name: new RegExp(`^${label} `, 'u') }))
+  await user.click(await screen.findByRole('menuitemradio', { name: option }))
+}
+
 const mocks = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), update: vi.fn(), revoke: vi.fn(), recipients: vi.fn() }))
 vi.mock('../../api/client', () => ({ api: { sharing: mocks } }))
 
@@ -38,8 +44,8 @@ describe('owner sharing dialog', () => {
     render(<ToastProvider><SharingDialog sessionId="session_one" open onClose={vi.fn()} /></ToastProvider>)
 
     await screen.findByText('Only you have access')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Permission' }), 'record')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Expires' }), 'never')
+    await choose(user, 'Permission', 'Can record')
+    await choose(user, 'Expires', 'Never')
     await user.click(screen.getByRole('button', { name: 'Create share link' }))
     await waitFor(() => expect(mocks.create).toHaveBeenCalledWith('session_one', {
       type: 'link', permission: 'record', expiresAt: null,
@@ -48,9 +54,9 @@ describe('owner sharing dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Copy link' }))
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/share#SECRET_LINK_TOKEN`)
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Access permission' }), 'view')
+    await choose(user, 'Access permission', 'Read only')
     await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('session_one', 'share_link', { permission: 'view', expiresAt: null }))
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Change expiration' }), '1')
+    await choose(user, 'Change expiration', '1 hour from now')
     await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(2))
     const expiry = mocks.update.mock.calls[1]?.[2]?.expiresAt as string
     expect(new Date(expiry).getTime()).toBeGreaterThan(Date.now())
@@ -67,7 +73,7 @@ describe('owner sharing dialog', () => {
     render(<ToastProvider><SharingDialog sessionId="session_one" open onClose={vi.fn()} /></ToastProvider>)
 
     await screen.findByText('Only you have access')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Share with' }), 'user')
+    await choose(user, 'Share with', 'A workspace user')
     expect(screen.getByRole('button', { name: 'Grant access' })).toBeDisabled()
     await user.type(screen.getByRole('textbox', { name: 'Find a user' }), 'Sam')
     await waitFor(() => expect(mocks.recipients).toHaveBeenCalledWith('Sam'))

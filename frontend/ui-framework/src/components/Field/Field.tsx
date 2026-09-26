@@ -13,6 +13,9 @@ import './Field.css'
 export interface FieldContextValue {
   /** The id the labelled control must adopt so `<label for>` resolves. */
   id: string
+  /** The label's own id, when the Field renders one, for a control that
+   *  composes its name from the label and something else (a select's value). */
+  labelId: string | undefined
   /** Ids of the hint and error nodes, ready to go into `aria-describedby`. */
   describedBy: string | undefined
   invalid: boolean
@@ -162,6 +165,7 @@ export const Field = forwardRef<HTMLDivElement, FieldProps>(function Field(
 
   const autoId = useId()
   const id = controlId ?? `${autoId}control`
+  const labelId = label != null ? `${autoId}label` : undefined
   const hintId = `${autoId}hint`
   const errorId = `${autoId}error`
   const isInvalid = invalid ?? Boolean(error)
@@ -170,6 +174,7 @@ export const Field = forwardRef<HTMLDivElement, FieldProps>(function Field(
   const context = useMemo<FieldContextValue>(
     () => ({
       id,
+      labelId,
       // `errorId` is listed unconditionally. Its node is always present, and a
       // stable `aria-describedby` avoids mutating the attribute of a focused
       // control — several screen readers compute the description once on focus
@@ -179,7 +184,7 @@ export const Field = forwardRef<HTMLDivElement, FieldProps>(function Field(
       required,
       disabled,
     }),
-    [id, hasHint, hintId, errorId, isInvalid, required, disabled],
+    [id, labelId, hasHint, hintId, errorId, isInvalid, required, disabled],
   )
 
   return (
@@ -194,6 +199,7 @@ export const Field = forwardRef<HTMLDivElement, FieldProps>(function Field(
       <FieldContext.Provider value={context}>
         {label != null && (
           <label
+            id={labelId}
             htmlFor={id}
             className={cx('tl-field__label', labelHidden && 'tl-visually-hidden')}
           >

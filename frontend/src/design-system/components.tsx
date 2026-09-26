@@ -1,6 +1,6 @@
 // Product-facing adapters preserve the feature API while the established UI
 // framework owns rendering, keyboard interaction, focus and motion.
-import { forwardRef, useCallback, useEffect, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes, type ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes, type ReactNode } from 'react'
 import * as UI from '@t-lingual/ui'
 import { Icon, type IconName } from './icons'
 import './components.css'
@@ -17,9 +17,11 @@ interface FieldBase { label: string; hint?: string; error?: string; optional?: b
 export const Input = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, 'size' | 'prefix'> & FieldBase & { icon?: IconName }>(function Input({ label, hint, error, optional, icon, id, ...props }, ref) {
   return <UI.Field className="ds-field" controlId={id} label={label} hint={error ? undefined : hint} error={error} optional={optional}><UI.Input ref={ref} prefix={icon && <Icon name={icon} size={18} />} {...props} /></UI.Field>
 })
-export const Select = forwardRef<HTMLSelectElement, Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> & FieldBase>(function Select({ label, hint, error, optional, id, ...props }, ref) {
+export const Select = forwardRef<HTMLButtonElement, UI.SelectProps & FieldBase>(function Select({ label, hint, error, optional, id, ...props }, ref) {
   return <UI.Field className="ds-field" controlId={id} label={label} hint={error ? undefined : hint} error={error} optional={optional}><UI.Select ref={ref} {...props} /></UI.Field>
 })
+export const SelectOption = UI.SelectOption
+export const SelectGroup = UI.SelectGroup
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & FieldBase>(function Textarea({ label, hint, error, optional, id, ...props }, ref) {
   return <UI.Field className="ds-field" controlId={id} label={label} hint={error ? undefined : hint} error={error} optional={optional}><UI.Textarea ref={ref} {...props} /></UI.Field>
 })
@@ -30,6 +32,10 @@ export function Badge({ tone = 'neutral', ...props }: { tone?: 'neutral' | 'acce
 export function Spinner({ label = 'Loading' }: { label?: string }) { return <UI.Spinner label={label} /> }
 export function Skeleton({ width = '100%', height = 16, className }: { width?: string | number; height?: string | number; className?: string }) {
   return <UI.Skeleton variant="rect" className={UI.cx('ds-skeleton', className)} data-width={String(width).replace('%', '')} data-height={String(height).replace('px', '')} />
+}
+/** A page or panel waiting for its content; see the framework's LoadingState. */
+export function LoadingState(props: Omit<UI.LoadingStateProps, 'still'>) {
+  return <UI.LoadingState still={<img src="/brand/tularity.svg" alt="" />} {...props} />
 }
 export function EmptyState({ icon = 'spark', ...props }: { icon?: IconName; title: string; description: string; action?: ReactNode }) { return <UI.EmptyState headingLevel={3} icon={<Icon name={icon} size={28} />} {...props} /> }
 export function Switch({ ariaLabel, ...props }: { checked: boolean; onChange: (checked: boolean) => void; label: string; ariaLabel?: string; disabled?: boolean }) { return <UI.Switch aria-label={ariaLabel} {...props} /> }

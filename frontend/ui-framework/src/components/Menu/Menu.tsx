@@ -470,14 +470,13 @@ function MenuRow({
         event.currentTarget.focus({ preventScroll: true })
       }}
     >
+      {/* A checkbox row's tick lives in the lead. A radio row's choice is
+        * the bar its CSS draws on the leading edge, which takes no width, so
+        * its lead stays free for an icon like any other row's. */}
       <span className="tl-menu__item-lead" aria-hidden="true">
-        {selectable ? (
+        {itemRole === 'menuitemcheckbox' ? (
           <span className="tl-menu__check" data-checked={checked || undefined}>
-            {itemRole === 'menuitemradio' ? (
-              <span className="tl-menu__dot" />
-            ) : (
-              <Icon name="check" size={14} />
-            )}
+            <Icon name="check" size={14} />
           </span>
         ) : (
           icon
@@ -582,7 +581,7 @@ export const MenuRadioGroup = forwardRef<HTMLDivElement, MenuRadioGroupProps>(
   },
 )
 
-export interface MenuRadioItemProps extends Omit<MenuItemProps, 'icon'> {
+export interface MenuRadioItemProps extends MenuItemProps {
   value: string
 }
 

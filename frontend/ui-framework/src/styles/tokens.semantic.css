@@ -64,13 +64,17 @@
     --tl-text-accent:     var(--tl-amber-800);
     --tl-text-brand:      var(--tl-brown-600);
 
-    /* -- Mark ---------------------------------------------------------------
-     * The logo's three inks. Named for the mark rather than reusing the accent
-     * interaction states, because a hover colour that later shifts for a
-     * usability reason must not quietly recolour the brand. */
-    --tl-mark-ink:       var(--tl-amber-500);
-    --tl-mark-ink-deep:  var(--tl-amber-700);
-    --tl-mark-ink-accent: var(--tl-brown-600);
+    /* -- Logo ---------------------------------------------------------------
+     * The approved four-piece logo's tonal inks, sampled from its master SVG.
+     * Named for the logo rather than reusing the accent interaction states,
+     * because a hover colour that later shifts for a usability reason must not
+     * quietly recolour the brand. Declared here only and not in the dark
+     * block: the logo is one fixed drawing on every surface, the same file the
+     * app bar shows in both themes, and an animated mark that shifted with the
+     * theme would no longer match it. */
+    --tl-logo-solid: #f49c12;
+    --tl-logo-base:  #e99a22;
+    --tl-logo-light: #f7b338;
 
     /* -- Borders ----------------------------------------------------------- */
     --tl-border:         var(--tl-sand-300);
@@ -172,12 +176,6 @@
     --tl-text-on-accent:  var(--tl-sand-975);
     --tl-text-accent:     var(--tl-amber-300);
     --tl-text-brand:      var(--tl-brown-300);
-
-    /* On near-black the deep ink moves lighter, not darker, or it vanishes;
-     * the brown accent keeps the identity at a lightness that still reads. */
-    --tl-mark-ink:       oklch(73% 0.132 74);
-    --tl-mark-ink-deep:  var(--tl-amber-300);
-    --tl-mark-ink-accent: var(--tl-brown-300);
 
     --tl-border:         var(--tl-sand-800);
     --tl-border-subtle:  var(--tl-sand-850);

@@ -5,6 +5,12 @@ import { loadLocalPreferences } from '../../app/preferences'
 import { removeBrowserStorage } from '../../platform/storage'
 import { SettingsPage } from './SettingsPage'
 
+/** Opens the dropdown labelled `label` and picks the option that reads `option`. */
+async function choose(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+  await user.click(screen.getByRole('button', { name: new RegExp(`^${label} `, 'u') }))
+  await user.click(await screen.findByRole('menuitemradio', { name: option }))
+}
+
 const mocks = vi.hoisted(() => ({
   authorizationBegin: vi.fn(),
   authorizationFinish: vi.fn(),
@@ -162,10 +168,9 @@ describe('settings security session actions', () => {
     const user = userEvent.setup()
     render(<ThemeProvider><ToastProvider><SettingsPage /></ToastProvider></ThemeProvider>)
     await user.click(await screen.findByRole('tab', { name: 'Sessions' }))
-    const archive = screen.getByRole('combobox', { name: 'Archive after inactivity' })
-    expect(archive).toHaveValue('24')
+    expect(screen.getByRole('button', { name: 'Archive after inactivity 24 hours' })).toBeInTheDocument()
     expect(screen.getByText(/Viewing a transcript does not reset/u)).toBeInTheDocument()
-    await user.selectOptions(archive, '72')
+    await choose(user, 'Archive after inactivity', '3 days')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(mocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ autoArchiveHours: 72 })))
     expect(screen.queryByText('All changes saved')).not.toBeInTheDocument()

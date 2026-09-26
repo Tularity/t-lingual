@@ -1,0 +1,150 @@
+@layer tl.components {
+  .tl-code-input {
+    /* The styling contract. */
+    --_cell-bg: var(--tl-field-bg);
+    --_cell-border: var(--tl-field-border);
+    --_cell-filled-border: var(--tl-border-strong);
+    --_cell-active-border: var(--tl-accent-border);
+    --_fg: var(--tl-text);
+    --_caret: var(--tl-accent);
+
+    position: relative;
+    display: block;
+    /* As wide as there is room for, up to its tiles' natural width: on a
+     * narrow screen the tiles give up width rather than overflow. */
+    inline-size: 100%;
+    max-inline-size: calc(var(--_length) * var(--_w) + (var(--_length) - 1) * var(--_gap) + var(--_breaks) * (var(--_group-gap) - var(--_gap)));
+  }
+
+  .tl-code-input[data-size='md'] { --_w: 40px; --_h: 48px; --_fs: 22px; --_gap: var(--tl-space-3); --_group-gap: var(--tl-space-6); --_radius: var(--tl-radius-md); }
+  .tl-code-input[data-size='lg'] { --_w: 52px; --_h: 64px; --_fs: 30px; --_gap: var(--tl-space-4); --_group-gap: var(--tl-space-8); --_radius: var(--tl-radius-lg); }
+
+  .tl-code-input__cells {
+    display: flex;
+    gap: var(--_gap);
+  }
+
+  .tl-code-input__cell {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: 0 1 var(--_w);
+    min-inline-size: 0;
+    block-size: var(--_h);
+    color: var(--_fg);
+    background: var(--_cell-bg);
+    border: 1.5px solid var(--_cell-border);
+    border-radius: var(--_radius);
+    box-shadow: 0 1px 2px color-mix(in oklab, var(--tl-text) 6%, transparent);
+    font-size: var(--_fs);
+    font-weight: var(--tl-weight-semibold, 600);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    transition: border-color var(--tl-duration-sm) var(--tl-ease-out), box-shadow var(--tl-duration-sm) var(--tl-ease-out),
+      background-color var(--tl-duration-sm) var(--tl-ease-out), translate var(--tl-duration-md) var(--tl-ease-signature);
+  }
+
+  .tl-code-input__cell[data-group-end] {
+    margin-inline-end: calc(var(--_group-gap) - var(--_gap));
+  }
+
+  .tl-code-input__cell[data-filled] {
+    border-color: var(--_cell-filled-border);
+  }
+
+  /* The next tile to fill lifts a little and takes the accent, with a caret. */
+  .tl-code-input__cell[data-active] {
+    border-color: var(--_cell-active-border);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--tl-accent) 22%, transparent);
+    translate: 0 calc(-1 * var(--tl-lift-xs));
+  }
+
+  .tl-code-input__cell[data-active]::after {
+    content: '';
+    inline-size: 2px;
+    block-size: 42%;
+    border-radius: 1px;
+    background: var(--_caret);
+    animation: tl-code-input-caret 1.1s steps(1, end) infinite;
+  }
+
+  /* Each character lands with a small pop. */
+  .tl-code-input__char {
+    animation: tl-code-input-land var(--tl-duration-spring-snappy) var(--tl-ease-spring-snappy) both;
+  }
+
+  /* Focus shows on the tiles themselves — the next one to fill, above, or a
+   * whole code's every tile — so the input opts out of the shared ring. */
+  .tl-code-input[data-focused][data-complete] .tl-code-input__cell {
+    border-color: var(--_cell-active-border);
+  }
+
+  /* The real field lies over the tiles: it takes the typing, the paste and the
+   * pointer, and shows nothing of itself. 16px keeps phones from zooming. */
+  .tl-code-input__control {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: transparent;
+    caret-color: transparent;
+    font-size: 16px;
+    letter-spacing: 0;
+    cursor: text;
+  }
+
+  .tl-code-input__control::selection { background: transparent; }
+
+  /* Wrong: every tile turns and the row shakes once. */
+  .tl-code-input[data-invalid] {
+    --_cell-border: var(--tl-danger-border);
+    --_cell-filled-border: var(--tl-danger-fg);
+    --_cell-active-border: var(--tl-danger-fg);
+    --_caret: var(--tl-danger-fg);
+  }
+
+  .tl-code-input[data-invalid] .tl-code-input__cells {
+    animation: tl-code-input-shake var(--tl-duration-settle) var(--tl-ease-out);
+  }
+
+  /* Checking: a ripple runs along the row until the answer comes. */
+  .tl-code-input[data-busy] .tl-code-input__cell {
+    --_cell-filled-border: var(--tl-accent-border);
+    animation: tl-code-input-ripple 1.2s var(--tl-ease-in-out) calc(var(--_i) * 90ms) infinite;
+  }
+
+  .tl-code-input[data-busy] .tl-code-input__control { cursor: progress; }
+
+  .tl-code-input[data-disabled] {
+    --_cell-bg: var(--tl-surface-disabled);
+    --_fg: var(--tl-text-disabled);
+  }
+
+  .tl-code-input[data-disabled] .tl-code-input__control { cursor: not-allowed; }
+
+  @keyframes tl-code-input-caret {
+    50% { opacity: 0; }
+  }
+
+  @keyframes tl-code-input-land {
+    from { opacity: 0; scale: var(--tl-zoom-pop); translate: 0 var(--tl-lift-sm); }
+  }
+
+  @keyframes tl-code-input-shake {
+    0%, 100% { translate: 0; }
+    18% { translate: calc(-8px * var(--tl-motion-distance)) 0; }
+    36% { translate: calc(7px * var(--tl-motion-distance)) 0; }
+    54% { translate: calc(-5px * var(--tl-motion-distance)) 0; }
+    72% { translate: calc(3px * var(--tl-motion-distance)) 0; }
+  }
+
+  @keyframes tl-code-input-ripple {
+    0%, 60%, 100% { translate: 0; background-color: var(--_cell-bg); }
+    30% { translate: 0 calc(-1 * var(--tl-lift-sm)); background-color: color-mix(in oklab, var(--tl-accent) 12%, var(--_cell-bg)); }
+  }
+}

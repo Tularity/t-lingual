@@ -1,0 +1,39 @@
+/* ---------------------------------------------------------------------------
+ * THE IRIS
+ *
+ * The opening is a mask: clear within --tl-iris-radius of the centre, solid
+ * beyond, with a soft edge between. The radius is a registered length so it
+ * can be animated; the centre is set where the iris is cut.
+ * ------------------------------------------------------------------------- */
+@property --tl-iris-radius {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@layer tl.components {
+  /* A cover with a hole in it: what lies beneath shows through the opening. */
+  .tl-iris {
+    mask-image: radial-gradient(
+      circle at var(--tl-iris-x, 50%) var(--tl-iris-y, 50%),
+      transparent calc(var(--tl-iris-radius) - var(--tl-iris-edge, 24px)),
+      #000 var(--tl-iris-radius)
+    );
+  }
+
+  /* A swapped page: the old state stays still beneath, and the new one is
+   * seen only within the opening, which the transition widens. */
+  :root[data-tl-iris]::view-transition-old(root),
+  :root[data-tl-iris]::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  :root[data-tl-iris]::view-transition-new(root) {
+    mask-image: radial-gradient(
+      circle at var(--tl-iris-x) var(--tl-iris-y),
+      #000 calc(var(--tl-iris-radius) - var(--tl-iris-edge, 24px)),
+      transparent var(--tl-iris-radius)
+    );
+  }
+}
