@@ -26,6 +26,9 @@
   .tl-table {
     --_pad-y: var(--tl-space-5);
     --_pad-x: var(--tl-space-6);
+    /* The gutter between the outer columns and the table's edge: wider than
+     * the gap between two columns, so a row never runs up against a border. */
+    --_edge: var(--tl-space-9);
     --_fs: var(--tl-text-sm);
     --_head-bg: var(--tl-surface);
     --_row-bg: transparent;
@@ -59,16 +62,19 @@
   .tl-table[data-density='compact'] {
     --_pad-y: var(--tl-space-2);
     --_pad-x: var(--tl-space-4);
+    --_edge: var(--tl-space-8);
     --_fs: var(--tl-text-xs);
   }
   .tl-table[data-density='default'] {
     --_pad-y: var(--tl-space-5);
     --_pad-x: var(--tl-space-6);
+    --_edge: var(--tl-space-9);
     --_fs: var(--tl-text-sm);
   }
   .tl-table[data-density='comfortable'] {
     --_pad-y: var(--tl-space-8);
     --_pad-x: var(--tl-space-8);
+    --_edge: var(--tl-space-10);
     --_fs: var(--tl-text-md);
   }
 
@@ -87,6 +93,13 @@
   .tl-table__cell:not(:first-child),
   .tl-table__header-cell:not(:first-child) {
     border-inline-start-width: 0;
+  }
+
+  .tl-table:not([data-stacked]) :is(.tl-table__cell, .tl-table__header-cell):first-child {
+    padding-inline-start: var(--_edge);
+  }
+  .tl-table:not([data-stacked]) :is(.tl-table__cell, .tl-table__header-cell):last-child {
+    padding-inline-end: var(--_edge);
   }
 
   .tl-table__header-cell {

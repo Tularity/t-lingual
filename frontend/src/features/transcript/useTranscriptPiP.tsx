@@ -14,6 +14,19 @@ interface DocumentPiPAccess {
 type PiPWindow = Window & { documentPictureInPicture?: DocumentPiPAccess }
 type PiPDocument = Document & { adoptedStyleSheets?: CSSStyleSheet[] }
 
+/**
+ * A recording the floating transcript can pause and resume: the floating
+ * window's own play and pause, and its buttons, act on it.
+ */
+export interface PiPRecordingControl {
+  /** Whether the microphone is being recorded now, rather than paused or stopped. */
+  recording: boolean
+  /** What the floating window says about the recording, as “Recording 12:04”. */
+  label: string
+  onPause(): void
+  onResume(): void
+}
+
 export interface TranscriptPiPOptions {
   locale?: ResolvedLanguage
   segments: Segment[]
@@ -22,16 +35,31 @@ export interface TranscriptPiPOptions {
   targetLanguage: string
   paused?: boolean
   live?: boolean
+  control?: PiPRecordingControl
 }
 
 function supportsDocumentPiP() {
   return typeof window !== 'undefined' && !!(window as PiPWindow).documentPictureInPicture?.requestWindow
 }
 
-function supportsVideoPiP() {
-  return typeof document !== 'undefined' && document.pictureInPictureEnabled
-    && typeof HTMLVideoElement.prototype.requestPictureInPicture === 'function'
-    && typeof HTMLCanvasElement.prototype.captureStream === 'function'
+/** WebKit's own presentation modes: all Safari offers on iPhone, and more on older Macs. */
+type WebKitVideo = HTMLVideoElement & {
+  webkitSupportsPresentationMode?: (mode: string) => boolean
+  webkitSetPresentationMode?: (mode: string) => void
+  webkitPresentationMode?: string
+}
+
+/**
+ * How a drawn transcript can float as a video: WebKit's own presentation mode
+ * where Safari offers it (it floats a canvas stream the standard call does
+ * not), else the standard API, or not at all.
+ */
+function videoPiPMode(): 'standard' | 'webkit' | null {
+  if (typeof document === 'undefined' || typeof HTMLCanvasElement.prototype.captureStream !== 'function') return null
+  const probe = document.createElement('video') as WebKitVideo
+  if (probe.webkitSupportsPresentationMode?.('picture-in-picture') && typeof probe.webkitSetPresentationMode === 'function') return 'webkit'
+  if (document.pictureInPictureEnabled && typeof HTMLVideoElement.prototype.requestPictureInPicture === 'function') return 'standard'
+  return null
 }
 
 function copyStyles(target: Document) {
@@ -68,8 +96,9 @@ function PiPContent({ options, close }: { options: TranscriptPiPOptions; close: 
     }, 0)
     return () => window.clearTimeout(timer)
   }, [latestRevision])
+  const control = options.control
   return <div ref={rootRef} className="tv-pip" aria-label={options.title}>
-    <section className="tv-pip__pane" aria-label={t("Original speech")}><header className="tv-pip__head"><div><LanguageLabel code={sourceLanguage} /><span>{t("Original")}</span>{options.paused && <span>{t("Paused")}</span>}</div><Button size="xs" variant="ghost" iconOnly icon={<Icon name="close" size={13} />} aria-label={t("Close transcript picture-in-picture")} onClick={close} /></header><div className="tv-pip__body">{latest.length === 0 ? <p className="tv-pip__empty">{t("Waiting for speech…")}</p> : latest.map(segment => <article key={`${segment.sessionId}:${segment.sequence}`} className="tv-pip__row"><p dir="auto">{segment.sourceText}{!segment.final && <span className="tv-row__caret" aria-hidden="true" />}</p></article>)}</div></section>
+    <section className="tv-pip__pane" aria-label={t("Original speech")}><header className="tv-pip__head"><div><LanguageLabel code={sourceLanguage} /><span>{t("Original")}</span>{options.paused && !control && <span>{t("Paused")}</span>}</div><div>{control && <><span className="tv-pip__status" data-recording={control.recording || undefined}>{control.label}</span><Button size="xs" variant="ghost" icon={<Icon name={control.recording ? 'pause' : 'play'} size={13} />} onClick={control.recording ? control.onPause : control.onResume}>{control.recording ? t("Pause") : t("Record")}</Button></>}<Button size="xs" variant="ghost" iconOnly icon={<Icon name="close" size={13} />} aria-label={t("Close transcript picture-in-picture")} onClick={close} /></div></header><div className="tv-pip__body">{latest.length === 0 ? <p className="tv-pip__empty">{t("Waiting for speech…")}</p> : latest.map(segment => <article key={`${segment.sessionId}:${segment.sequence}`} className="tv-pip__row"><p dir="auto">{segment.sourceText}{!segment.final && <span className="tv-row__caret" aria-hidden="true" />}</p></article>)}</div></section>
     <section className="tv-pip__pane tv-pip__pane--translation" aria-label={t("Translation")}><header className="tv-pip__head"><div><LanguageLabel code={options.targetLanguage} /><span>{t("Translation")}</span></div></header><div className="tv-pip__body">{latest.filter(segment => segment.translation || segment.translationStatus === 'failed').map(segment => <article key={`${segment.sessionId}:${segment.sequence}`} className="tv-pip__row"><p dir="auto">{segment.translationStatus === 'failed' ? t('Translation unavailable') : segment.translation}{segment.translationStatus === 'pending' && <span className="tv-row__caret" aria-hidden="true" />}</p></article>)}</div></section>
   </div>
 }
@@ -129,7 +158,15 @@ function drawVideoFrame(canvas: HTMLCanvasElement, options: TranscriptPiPOptions
       const width = Math.min(20, 20 * ratio), height = Math.min(20, 20 / ratio)
       context.drawImage(flag, 15 + (20 - width) / 2, top + 8 + (20 - height) / 2, width, height)
     }
-    context.fillText(`${pane.code === 'auto' ? t('Mixed languages') : options.locale==='zh-Hans'?new Intl.DisplayNames(['zh-Hans'],{type:'language'}).of(pane.code):languageName(pane.code)} · ${pane.label}${index === 0 && options.paused ? ` · ${t('Paused')}` : ''}`, 45, top + 23)
+    context.fillText(`${pane.code === 'auto' ? t('Mixed languages') : options.locale==='zh-Hans'?new Intl.DisplayNames(['zh-Hans'],{type:'language'}).of(pane.code):languageName(pane.code)} · ${pane.label}${index === 0 && options.paused && !options.control ? ` · ${t('Paused')}` : ''}`, 45, top + 23)
+    if (index === 0 && options.control) {
+      // Whether it is recording, where the floating window's play and pause act on it.
+      const recording = options.control.recording
+      context.textAlign = 'right'; context.font = '600 15px system-ui, sans-serif'
+      context.fillStyle = recording ? (dark ? '#f08a7a' : '#b3261e') : (dark ? '#c5b9aa' : '#755f49')
+      context.fillText(`${recording ? '● ' : ''}${options.control.label}`, canvas.width - 15, top + 23)
+      context.textAlign = 'left'
+    }
     context.save(); context.beginPath(); context.rect(12, top + 34, canvas.width - 24, paneHeight - 38); context.clip()
     let y = top + paneHeight - 12
     for (let item = pane.lines.length - 1; item >= 0 && y > top + 30; item--) {
@@ -146,11 +183,69 @@ function drawVideoFrame(canvas: HTMLCanvasElement, options: TranscriptPiPOptions
   }
 }
 
-interface VideoState {
-  video: HTMLVideoElement
+/**
+ * The video a drawn transcript floats in: a canvas stream playing in a video
+ * that is in the page, as Safari requires of a video it floats, but not seen.
+ * It is made ready before it is asked for, so a click finds it with a frame.
+ */
+interface VideoSource {
+  canvas: HTMLCanvasElement
+  video: WebKitVideo
   stream: MediaStream
-  frame: number
-  onLeave: () => void
+  /** Set while the page itself plays or pauses the video, so its events are not taken for the viewer's. */
+  syncing: boolean
+}
+
+function createVideoSource(options: TranscriptPiPOptions): VideoSource {
+  const canvas = document.createElement('canvas')
+  canvas.width = 640; canvas.height = 400
+  const stream = canvas.captureStream(15)
+  const video = document.createElement('video') as WebKitVideo
+  video.className = 'tv-pip-video-source'
+  video.setAttribute('aria-hidden', 'true')
+  video.muted = true; video.playsInline = true
+  video.setAttribute('playsinline', ''); video.setAttribute('webkit-playsinline', '')
+  video.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none'
+  video.srcObject = stream
+  document.body.append(video)
+  // Drawn once capture has begun, so the stream has its first frame.
+  drawVideoFrame(canvas, options)
+  return { canvas, video, stream, syncing: false }
+}
+
+/** Stops the capture and removes the video; `drawing` and `listeners` are its redraw timer and event listeners, if it floated. */
+function destroyVideoSource(source: VideoSource, drawing: number, listeners: Array<[string, () => void]>) {
+  window.clearInterval(drawing)
+  for (const [type, listener] of listeners) source.video.removeEventListener(type, listener)
+  source.stream.getTracks().forEach((track) => track.stop())
+  source.syncing = true
+  source.video.pause()
+  source.video.srcObject = null
+  source.video.remove()
+}
+
+/** Resolves once the video has a frame to show, or after half a second, as Safari may not say so before it floats. */
+function hasFrame(video: HTMLVideoElement) {
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const done = () => { window.clearTimeout(timer); video.removeEventListener('canplay', done); resolve() }
+    const timer = window.setTimeout(done, 500)
+    video.addEventListener('canplay', done)
+  })
+}
+
+/** Marks the video as moved by the page until the returned release is called, a turn later. */
+function holdSync(source: VideoSource) {
+  source.syncing = true
+  return () => { window.setTimeout(() => { source.syncing = false }, 0) }
+}
+
+/** Plays or pauses the floating video for the page's own reasons, not the viewer's. */
+function setPlaying(source: VideoSource, playing: boolean) {
+  if (playing !== source.video.paused) return
+  const release = holdSync(source)
+  if (playing) void source.video.play().catch(() => undefined).finally(release)
+  else { source.video.pause(); release() }
 }
 
 export function useTranscriptPiP(options: TranscriptPiPOptions) {
@@ -163,24 +258,35 @@ export function useTranscriptPiP(options: TranscriptPiPOptions) {
   const documentWindow = useRef<Window | null>(null)
   const onWindowClose = useRef<(() => void) | null>(null)
   const themeObserver = useRef<MutationObserver | null>(null)
-  const videoState = useRef<VideoState | null>(null)
+  const videoSource = useRef<VideoSource | null>(null)
+  const videoDrawing = useRef(0)
+  const videoListeners = useRef<Array<[string, () => void]>>([])
+  const videoOpen = useRef(false)
+  const prepareTimer = useRef(0)
   const opening = useRef(false)
   const mounted = useRef(true)
   const requestEpoch = useRef(0)
-  const supported = supportsDocumentPiP() || supportsVideoPiP()
+  // What the browser offers does not change while the page is open.
+  const [{ documentPiP, videoMode }] = useState(() => { const documentPiP = supportsDocumentPiP(); return { documentPiP, videoMode: documentPiP ? null : videoPiPMode() } })
+  const supported = documentPiP || videoMode !== null
+
+  /** Readies the video before it is needed; again after each use. */
+  const prepareVideo = useCallback(() => {
+    window.clearTimeout(prepareTimer.current)
+    prepareTimer.current = window.setTimeout(() => {
+      if (mounted.current && !videoSource.current) videoSource.current = createVideoSource(latestOptions.current)
+    }, 0)
+  }, [])
 
   const releaseVideo = useCallback(() => {
-    const state = videoState.current
-    if (!state) return
-    videoState.current = null
-    cancelAnimationFrame(state.frame)
-    state.video.removeEventListener('leavepictureinpicture', state.onLeave)
-    state.stream.getTracks().forEach((track) => track.stop())
-    state.video.pause()
-    state.video.srcObject = null
-    state.video.remove()
+    const source = videoSource.current
+    const wasOpen = videoOpen.current
+    videoOpen.current = false
+    if (source) { videoSource.current = null; destroyVideoSource(source, videoDrawing.current, videoListeners.current) }
+    videoListeners.current = []
     setIsOpen(false)
-  }, [])
+    if (wasOpen && mounted.current) prepareVideo()
+  }, [prepareVideo])
 
   const close = useCallback(() => {
     requestEpoch.current += 1
@@ -195,23 +301,75 @@ export function useTranscriptPiP(options: TranscriptPiPOptions) {
       setPortalRoot(null)
       if (!pipWindow.closed) pipWindow.close()
     }
-    if (videoState.current) {
-      if (document.pictureInPictureElement === videoState.current.video) void document.exitPictureInPicture().catch(() => undefined)
+    const source = videoSource.current
+    if (source && videoOpen.current) {
+      if (document.pictureInPictureElement === source.video) void document.exitPictureInPicture().catch(() => undefined)
+      if (source.video.webkitPresentationMode === 'picture-in-picture') source.video.webkitSetPresentationMode?.('inline')
       releaseVideo()
     }
     setIsOpen(false)
   }, [releaseVideo])
 
+  const openVideo = useCallback(async (epoch: number) => {
+    const source = videoSource.current ?? (videoSource.current = createVideoSource(latestOptions.current))
+    drawVideoFrame(source.canvas, latestOptions.current)
+    videoOpen.current = true
+    // Played from the click, then floated: at once when it already has a
+    // frame, which it has unless the click came before it could be made ready.
+    const release = holdSync(source)
+    const playing = source.video.play().catch(() => undefined)
+    const enter = () => {
+      if (videoMode === 'webkit') { source.video.webkitSetPresentationMode!('picture-in-picture'); return Promise.resolve() }
+      return source.video.requestPictureInPicture().then(() => undefined)
+    }
+    try {
+      await (source.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA ? enter() : playing.then(() => hasFrame(source.video)).then(enter))
+    } finally { release() }
+    if (!mounted.current || requestEpoch.current !== epoch || videoSource.current !== source) {
+      if (document.pictureInPictureElement === source.video) void document.exitPictureInPicture().catch(() => undefined)
+      return
+    }
+    const floating = () => document.pictureInPictureElement === source.video || source.video.webkitPresentationMode === 'picture-in-picture'
+    const onLeave = () => {
+      if (floating()) return
+      if (videoSource.current === source) releaseVideo()
+    }
+    // The floating window's own play and pause act on the recording. Closing
+    // it pauses the video too, so a pause counts only if it is still floating.
+    const onPlay = () => {
+      if (source.syncing) return
+      const control = latestOptions.current.control
+      if (control && !control.recording) control.onResume()
+    }
+    const onPause = () => {
+      if (source.syncing) return
+      window.setTimeout(() => {
+        if (source.syncing || videoSource.current !== source || !floating() || !source.video.paused) return
+        const control = latestOptions.current.control
+        if (control?.recording) control.onPause()
+        else if (!control) setPlaying(source, true)
+      }, 700)
+    }
+    videoListeners.current = [['leavepictureinpicture', onLeave], ['webkitpresentationmodechanged', onLeave], ['play', onPlay], ['pause', onPause]]
+    for (const [type, listener] of videoListeners.current) source.video.addEventListener(type, listener)
+    // Drawn on a timer rather than each animation frame: animation frames
+    // stop while the page is in the background, and the floating window is
+    // most useful then.
+    window.clearInterval(videoDrawing.current)
+    videoDrawing.current = window.setInterval(() => { if (videoSource.current === source) drawVideoFrame(source.canvas, latestOptions.current) }, 250)
+    setIsOpen(true)
+  }, [releaseVideo, videoMode])
+
   const open = useCallback(async () => {
-    if (opening.current || documentWindow.current || videoState.current) return
+    if (opening.current || documentWindow.current || videoOpen.current) return
     if (!supported) { setError('Picture-in-picture is not available in this browser.'); return }
     opening.current = true
     const epoch = ++requestEpoch.current
     setError('')
     try {
-      const documentPiP = (window as PiPWindow).documentPictureInPicture
-      if (documentPiP) {
-        const pipWindow = await documentPiP.requestWindow({ width: 480, height: 300 })
+      const documentAccess = (window as PiPWindow).documentPictureInPicture
+      if (documentAccess) {
+        const pipWindow = await documentAccess.requestWindow({ width: 480, height: 300 })
         if (!mounted.current || requestEpoch.current !== epoch) { pipWindow.close(); return }
         documentWindow.current = pipWindow
         copyStyles(pipWindow.document)
@@ -225,45 +383,38 @@ export function useTranscriptPiP(options: TranscriptPiPOptions) {
         pipWindow.addEventListener('pagehide', onClose, { once: true })
         setPortalRoot(root)
         setIsOpen(true)
-      } else {
-        const canvas = document.createElement('canvas')
-        canvas.width = 640; canvas.height = 400
-        drawVideoFrame(canvas, latestOptions.current)
-        const stream = canvas.captureStream(12)
-        const video = document.createElement('video')
-        video.muted = true; video.playsInline = true; video.autoplay = true
-        video.srcObject = stream
-        video.className = 'tv-pip-video-source'
-        video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;bottom:0;right:0'
-        document.body.append(video)
-        const state: VideoState = { video, stream, frame: 0, onLeave: releaseVideo }
-        videoState.current = state
-        const draw = () => {
-          if (videoState.current !== state) return
-          drawVideoFrame(canvas, latestOptions.current)
-          state.frame = requestAnimationFrame(draw)
-        }
-        draw()
-        await video.play()
-        if (!mounted.current || requestEpoch.current !== epoch || videoState.current !== state) return
-        await video.requestPictureInPicture()
-        if (!mounted.current || requestEpoch.current !== epoch || videoState.current !== state) {
-          if (document.pictureInPictureElement === video) void document.exitPictureInPicture().catch(() => undefined)
-          return
-        }
-        video.addEventListener('leavepictureinpicture', state.onLeave, { once: true })
-        setIsOpen(true)
-      }
+      } else await openVideo(epoch)
     } catch (caught) {
       if (requestEpoch.current === epoch) {
         close()
+        releaseVideo()
+        prepareVideo()
         setError(caught instanceof Error ? caught.message : 'Picture-in-picture could not be opened.')
       }
     } finally { if (requestEpoch.current === epoch) opening.current = false }
-  }, [close, releaseVideo, supported])
+  }, [close, openVideo, prepareVideo, releaseVideo, supported])
 
   const toggle = useCallback(() => { if (isOpen) close(); else void open() }, [close, isOpen, open])
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; close() } }, [close])
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      window.clearTimeout(prepareTimer.current)
+      close()
+      const source = videoSource.current
+      if (source) { videoSource.current = null; destroyVideoSource(source, videoDrawing.current, videoListeners.current) }
+    }
+  }, [close])
+  useEffect(() => { if (videoMode) prepareVideo() }, [prepareVideo, videoMode])
+  // A floating video plays while the recording does, so its play and pause
+  // show what pressing them will do.
+  const recordingNow = options.control?.recording
+  useEffect(() => {
+    const source = videoSource.current
+    if (!isOpen || !source || recordingNow === undefined) return
+    drawVideoFrame(source.canvas, latestOptions.current)
+    setPlaying(source, recordingNow)
+  }, [isOpen, recordingNow])
   useEffect(() => {
     if (options.live !== false || !isOpen) return
     const timer = window.setTimeout(close, 0)

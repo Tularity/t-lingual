@@ -1,0 +1,13 @@
+# Optional: lets the administrators' monitoring page read the GPU that the
+# separately deployed recognition and translation services run on. Only the
+# NVIDIA "utility" capability is granted: nvidia-smi and its management
+# library, no compute. Needs a host with the NVIDIA container runtime.
+services:
+  app:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [utility]

@@ -14,7 +14,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   return <UI.Button ref={ref} variant={variant === 'secondary' ? 'default' : variant} icon={icon && <Icon name={icon} size={18} />} className={UI.cx('ds-button', className)} {...props} />
 })
 interface FieldBase { label: string; hint?: string; error?: string; optional?: boolean }
-export const Input = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, 'size' | 'prefix'> & FieldBase & { icon?: IconName }>(function Input({ label, hint, error, optional, icon, id, ...props }, ref) {
+export const Input = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, 'size' | 'prefix'> & FieldBase & { icon?: IconName; suffix?: ReactNode; clearable?: boolean; clearLabel?: string }>(function Input({ label, hint, error, optional, icon, id, ...props }, ref) {
   return <UI.Field className="ds-field" controlId={id} label={label} hint={error ? undefined : hint} error={error} optional={optional}><UI.Input ref={ref} prefix={icon && <Icon name={icon} size={18} />} {...props} /></UI.Field>
 })
 export const Select = forwardRef<HTMLButtonElement, UI.SelectProps & FieldBase>(function Select({ label, hint, error, optional, id, ...props }, ref) {

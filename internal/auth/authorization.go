@@ -73,6 +73,19 @@ func NormalizeAuthorizationScope(raw string) (string, error) {
 		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(parts[3]) {
 			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
 		}
+	case len(parts) == 4 && parts[1] == "user" && parts[2] == "delete":
+		if !validAuthorizationTarget(parts[3], "usr") {
+			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
+		}
+	case len(parts) == 4 && parts[1] == "limits" && parts[2] == "update":
+		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(parts[3]) {
+			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
+		}
+	case len(parts) == 5 && parts[1] == "user" && (parts[2] == "limits" || parts[2] == "profile" || parts[2] == "settings" ||
+		parts[2] == "passkey" || parts[2] == "session"):
+		if !validAuthorizationTarget(parts[3], "usr") || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(parts[4]) {
+			return "", fmt.Errorf("%w: authorization scope", ErrInvalidInput)
+		}
 	case len(parts) == 6 && parts[1] == "user" && parts[2] == "update":
 		if !validAuthorizationTarget(parts[3], "usr") ||
 			(parts[4] != "-" && parts[4] != string(domain.RoleUser) && parts[4] != string(domain.RoleAdmin)) ||
@@ -106,16 +119,18 @@ func AdminCodeCreateAuthorizationScope(kind, target, notBefore, expiresAt string
 }
 
 // AdminSiteSettingsAuthorizationScope hashes the compact UTF-8 JSON object
-// with keys in this order: registrationHelpMarkdown, codeAttemptsPerMinute.
+// with keys in this order: registrationHelpMarkdown, codeAttemptsPerMinute,
+// draftTranslationIntervalMs.
 // HTML escaping is disabled so JS JSON.stringify of those two fields matches.
-func AdminSiteSettingsAuthorizationScope(markdown string, attempts int) (string, error) {
+func AdminSiteSettingsAuthorizationScope(markdown string, attempts, draftIntervalMS int) (string, error) {
 	var buffer bytes.Buffer
 	encoder := json.NewEncoder(&buffer)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(struct {
-		RegistrationHelpMarkdown string `json:"registrationHelpMarkdown"`
-		CodeAttemptsPerMinute    int    `json:"codeAttemptsPerMinute"`
-	}{markdown, attempts}); err != nil {
+		RegistrationHelpMarkdown   string `json:"registrationHelpMarkdown"`
+		CodeAttemptsPerMinute      int    `json:"codeAttemptsPerMinute"`
+		DraftTranslationIntervalMS int    `json:"draftTranslationIntervalMs"`
+	}{markdown, attempts, draftIntervalMS}); err != nil {
 		return "", err
 	}
 	encoded := bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'})
@@ -143,6 +158,28 @@ func AdminUserUpdateAuthorizationScope(
 	return NormalizeAuthorizationScope(
 		"admin:user:update:" + userID + ":" + roleValue + ":" + statusValue,
 	)
+}
+
+// AdminUserChangeAuthorizationScope binds step-up authorization to one
+// change of one account: kind is limits, profile or settings, and digest is
+// the lowercase hex SHA-256 of the exact request body sent with it; or kind
+// is passkey or session, and digest is the SHA-256 of the identifier of the
+// one passkey or signed-in browser to remove.
+func AdminUserChangeAuthorizationScope(kind, userID, digest string) (string, error) {
+	return NormalizeAuthorizationScope("admin:user:" + kind + ":" + userID + ":" + digest)
+}
+
+// AdminUserDeleteAuthorizationScope binds step-up authorization to deleting
+// exactly one account.
+func AdminUserDeleteAuthorizationScope(userID string) (string, error) {
+	return NormalizeAuthorizationScope("admin:user:delete:" + userID)
+}
+
+// AdminDefaultLimitsAuthorizationScope binds step-up authorization to one
+// change of the default limits: digest is the lowercase hex SHA-256 of the
+// exact request body.
+func AdminDefaultLimitsAuthorizationScope(digest string) (string, error) {
+	return NormalizeAuthorizationScope("admin:limits:update:" + digest)
 }
 
 func validAuthorizationTarget(value, prefix string) bool {

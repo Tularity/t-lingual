@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 
@@ -333,4 +334,59 @@ func (r *wavReader) Read(dst []byte) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// Span is a stretch of saved audio: raw mono float32 PCM inside one part.
+type Span struct {
+	SampleRate int
+	// StartMS is where the span begins on the session's timeline.
+	StartMS int64
+	path    string
+	offset  int64
+	length  int64
+}
+
+// Frames is how many samples the span holds.
+func (s Span) Frames() int64 { return s.length / 4 }
+
+// Open reads just the span's bytes.
+func (s Span) Open() (io.ReadCloser, error) {
+	file, err := os.Open(s.path)
+	if err != nil {
+		return nil, err
+	}
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.NewSectionReader(file, s.offset, s.length), file}, nil
+}
+
+// Spans is the saved audio between two moments of a session's timeline, in
+// order; the caller reads each span itself.
+func (m *Manager) Spans(ctx context.Context, ownerID, sessionID string, startMS, endMS int64) ([]Span, error) {
+	if endMS <= startMS || startMS < 0 {
+		return nil, errors.New("media: invalid audio range")
+	}
+	guard := m.lock(sessionID)
+	guard.Lock()
+	defer guard.Unlock()
+	parts, err := m.reconcile(ctx, ownerID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(parts, func(a, b int) bool {
+		return parts[a].OffsetFrames*int64(parts[b].SampleRate) < parts[b].OffsetFrames*int64(parts[a].SampleRate)
+	})
+	spans := make([]Span, 0, 2)
+	for _, part := range parts {
+		rate := int64(part.SampleRate)
+		from := max(part.OffsetFrames, startMS*rate/1000)
+		to := min(part.OffsetFrames+part.Frames, (endMS*rate+999)/1000)
+		if to <= from {
+			continue
+		}
+		spans = append(spans, Span{SampleRate: part.SampleRate, StartMS: from * 1000 / rate,
+			path: m.path(sessionID, part.ID), offset: (from - part.OffsetFrames) * 4, length: (to - from) * 4})
+	}
+	return spans, nil
 }

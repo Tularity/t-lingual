@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { Avatar, Drawer, DrawerHeader, DrawerTitle, DrawerBody, DrawerFooter, Icon as UIIcon, Kbd, irisTransition } from '@t-lingual/ui'
+import { Avatar, Drawer, DrawerHeader, DrawerTitle, DrawerBody, DrawerFooter, Icon as UIIcon, irisTransition } from '@t-lingual/ui'
 import { Button, Dialog, Icon, useTheme, useToast } from '../design-system'
 import { useI18n } from './i18n'
 import { InterfaceLanguageMenu } from './i18n/InterfaceLanguageMenu'
 import type { IconName } from '../design-system/icons'
+import type { Workspace } from '../api/contracts'
 import { useAuth } from './auth'
-import { Link, useRouter } from './router'
+import { Link, matchPath, useRouter } from './router'
 import { errorMessage } from './utils'
 import { pageDirection, pageKey } from './pageTransition'
-import { useSignOutStage } from './stage'
+import { useStageControls } from './stage'
+import { useWorkspaces, workspaceIcon } from './workspaces'
+import { UserAvatar } from './UserAvatar'
+import { SidebarStorage } from './SidebarStorage'
+import { AccountStorageProvider } from './accountStorage'
+import { WorkspaceDialog } from '../features/workspaces/WorkspaceDialogs'
+import { adminSections } from '../features/admin/AdminRoute'
 import './app.css'
 
-const mainNav: Array<{ href: string; label: string; icon: IconName; matches: (path: string) => boolean }> = [
-  { href: '/sessions', label: 'Sessions', icon: 'grid', matches: (path) => path === '/' || path.startsWith('/sessions') || path.startsWith('/live') },
-  { href: '/history', label: 'History', icon: 'history', matches: (path) => path.startsWith('/history') },
-  { href: '/settings', label: 'Settings', icon: 'settings', matches: (path) => path.startsWith('/settings') },
-]
+/** One step of the breadcrumb; the last is the page itself. */
+interface Crumb { label: string; href?: string }
 export function Brand({ compact = false }: { compact?: boolean }) {
   return <span className="brand"><img className="brand__mark" src="/brand/tularity.svg" alt="" width="44" height="40" />{!compact && <span className="brand__word">t-lingual<span>by Tularity</span></span>}</span>
 }
@@ -63,12 +67,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const mainRef = useRef<HTMLElement>(null)
   const previousPathRef = useRef(path)
   const demo = __TLINGUAL_DEVELOPMENT_MOCK__
-  const { beginSignOut, cancelSignOut } = useSignOutStage()
+  const { beginSignOut, cancelSignOut } = useStageControls()
+  const workspaces = useWorkspaces()
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  // The workspace the page belongs to: the one open, or the one keeping the session shown.
+  const openWorkspace = matchPath('/workspaces/:workspaceId', path)?.workspaceId
+  const pageWorkspace = openWorkspace ? { id: openWorkspace } : workspaces.page
+  const currentWorkspace = pageWorkspace && 'id' in pageWorkspace ? workspaces.find(pageWorkspace.id) : undefined
+  const inShared = path === '/shared-with-you' || Boolean(pageWorkspace && 'shared' in pageWorkspace)
   // Each page is its own element, keyed by where it is, so it mounts fresh and
   // plays its entrance; the direction is settled while rendering the move.
   const currentPage = pageKey(path)
   const [page, setPage] = useState({ key: currentPage, direction: 1 as 1 | -1 })
-  if (page.key !== currentPage) setPage({ key: currentPage, direction: pageDirection(page.key, currentPage) })
+  if (page.key !== currentPage) setPage({ key: currentPage, direction: pageDirection(page.key, currentPage, workspaces.items.map(item => item.id)) })
   useEffect(() => setMobileOpen(false), [path])
   useEffect(() => {
     const update = () => setOnline(navigator.onLine)
@@ -98,24 +109,58 @@ export function AppShell({ children }: { children: ReactNode }) {
     catch (caught) { cancelSignOut(); push({ tone: 'error', title: t('Couldn’t sign out'), message: errorMessage(caught) }) }
     finally { setLoggingOut(false) }
   }
+  // A pinned workspace's pin unpins it; pinning is done from the workspace's own menus.
+  const unpin = async (item: Workspace) => {
+    try { await workspaces.pin(item.id, false) }
+    catch (caught) { push({ tone: 'error', title: t('Couldn’t unpin workspace'), message: errorMessage(caught) }) }
+  }
+  const navLink = (href: string, icon: IconName, label: string, active: boolean) => <Link key={href} className="app-nav__link" data-active={active || undefined} aria-current={active ? 'page' : undefined} href={href} onClick={() => setMobileOpen(false)}><Icon name={icon} size={18} /><span dir="auto">{label}</span></Link>
+  // The workspaces used most recently, up to four; past four, the rest are a
+  // page of their own, and until then the last place goes to making another.
   const nav = () => <nav className="app-nav" aria-label={t("Main navigation")}>
-    <p className="app-nav__label">{t("Workspace")}</p>
-    {mainNav.map(item => <Link key={item.href} className="app-nav__link" data-active={item.matches(path) || undefined} aria-current={item.matches(path) ? 'page' : undefined} href={item.href} onClick={() => setMobileOpen(false)}><Icon name={item.icon} size={18} /><span>{t(item.label)}</span></Link>)}
-    {user?.role === 'admin' && <><p className="app-nav__label app-nav__label--admin">{t("Manage")}</p><Link className="app-nav__link" data-active={path.startsWith('/admin') || undefined} aria-current={path.startsWith('/admin') ? 'page' : undefined} href="/admin" onClick={() => setMobileOpen(false)}><Icon name="admin" size={18} /><span>{t("Administration")}</span></Link></>}
+    <p className="app-nav__label">{t("Workspaces")}</p>
+    {workspaces.sidebar.map(item => item.pinnedAt
+      ? <div key={item.id} className="app-nav__item" data-pinned="">{navLink(`/workspaces/${item.id}`, workspaceIcon(item), workspaces.name(item), currentWorkspace?.id === item.id)}
+        <button type="button" className="app-nav__pin" aria-label={t('Unpin {name}', { name: workspaces.name(item) })} title={t('Unpin')} onClick={() => void unpin(item)}><Icon name="pin" size={16} strokeWidth={2.1} /></button></div>
+      : navLink(`/workspaces/${item.id}`, workspaceIcon(item), workspaces.name(item), currentWorkspace?.id === item.id))}
+    {workspaces.status === 'error' ? <button type="button" className="app-nav__link app-nav__link--quiet" onClick={() => void workspaces.refresh()}><Icon name="refresh" size={18} /><span>{t("Couldn’t load · try again")}</span></button>
+      : workspaces.status === 'ready' && (workspaces.overflow ? navLink('/workspaces', 'grid', t("More workspaces"), path === '/workspaces')
+        : <button type="button" className="app-nav__link app-nav__link--quiet" onClick={() => { setMobileOpen(false); setCreatingWorkspace(true) }}><Icon name="plus" size={18} /><span>{t("New workspace")}</span></button>)}
+    {workspaces.hasShared && navLink('/shared-with-you', 'users', t("Shared with you"), inShared)}
+    <p className="app-nav__label app-nav__label--group">{t("Account")}</p>
+    {navLink('/settings', 'settings', t("Settings"), path.startsWith('/settings'))}
+    {navLink('/usage', 'chart', t("Usage"), path === '/usage')}
+    {user?.role === 'admin' && <>
+      <p className="app-nav__label app-nav__label--group">{t("Administration")}</p>
+      {adminSections.map((section) => navLink(section.path, section.icon, t(section.label), path === section.path))}
+    </>}
   </nav>
-  const account = () => <div className="app-sidebar__footer"><Link className="user-chip" href="/settings" onClick={() => setMobileOpen(false)} aria-label={t("Account settings")}><Avatar name={user?.displayName || t('User')} size="sm" /><span className="user-chip__body"><strong><bdi>{user?.displayName}</bdi></strong><small>{user?.role === 'admin' ? t('Administrator') : t('Personal workspace')}</small></span></Link><Button variant="ghost" icon="logout" iconOnly aria-label={t("Sign out")} loading={loggingOut} onClick={(event) => void signOut(event.currentTarget)} /></div>
-  const pageName = path.startsWith('/live/') ? 'Live interpretation' : path.startsWith('/history/') ? 'Session transcript' : path === '/setup' ? 'Quick setup' : path.startsWith('/admin') ? 'Administration' : mainNav.find(item => item.matches(path))?.label || 'Workspace'
-  const parentPage = path.startsWith('/live/') ? { href: '/sessions', label: 'Sessions' } : path.startsWith('/history/') ? { href: '/history', label: 'History' } : null
-  return <div className="app-frame">
+  const account = () => <div className="app-sidebar__footer"><Link className="user-chip" href="/settings" onClick={() => setMobileOpen(false)} aria-label={t("Account settings")}>{user ? <UserAvatar user={user} size="sm" alt="" /> : <Avatar name={t('User')} size="sm" />}<span className="user-chip__body"><strong><bdi>{user?.displayName}</bdi></strong><small>{user?.role === 'admin' ? t('Administrator') : t('Personal account')}</small></span></Link><Button variant="ghost" icon="logout" iconOnly aria-label={t("Sign out")} loading={loggingOut} onClick={(event) => void signOut(event.currentTarget)} /></div>
+  // Workspaces › the workspace › the page. The list of every workspace is a
+  // step of its own only once there are more than the sidebar shows.
+  const home = workspaces.recent ? `/workspaces/${workspaces.recent.id}` : '/sessions'
+  const root: Crumb = { label: t("Workspaces"), href: workspaces.overflow ? '/workspaces' : undefined }
+  const adminSection = adminSections.find((section) => section.path === path)
+  const sessionPage = path.startsWith('/live/') ? t("Live interpretation") : path.startsWith('/sessions/') ? t("Session transcript") : null
+  const crumbs: Crumb[] = path === '/workspaces' ? [{ label: t("Workspaces") }]
+    : openWorkspace ? [root, { label: currentWorkspace ? workspaces.name(currentWorkspace) : '' }]
+    : sessionPage && inShared ? [{ label: t("Shared with you"), href: '/shared-with-you' }, { label: sessionPage }]
+    : sessionPage ? [root, ...(currentWorkspace ? [{ label: workspaces.name(currentWorkspace), href: `/workspaces/${currentWorkspace.id}` }] : []), { label: sessionPage }]
+    : adminSection ? [{ label: t('Administration') }, { label: t(adminSection.label) }]
+    : [{ label: t(path === '/shared-with-you' ? 'Shared with you' : path === '/setup' ? 'Quick setup' : path.startsWith('/admin') ? 'Administration' : path.startsWith('/settings') ? 'Settings' : path === '/usage' ? 'Usage' : 'Workspaces') }]
+  const current = crumbs[crumbs.length - 1]!
+  const parent = crumbs.length > 1 ? crumbs[crumbs.length - 2] : undefined
+  return <AccountStorageProvider userId={user?.id}><div className="app-frame">
     <a className="skip-link" href="#main-content">{t("Skip to content")}</a>
-    <aside className="app-sidebar"><button type="button" className="app-sidebar__brand" aria-label={t("Workspace guide")} title={t("Workspace guide")} onClick={() => setHelpOpen(true)}><Brand /></button>{nav()}<div className="app-sidebar__note"><UIIcon name="shield" size={17} /><strong>{t("Yours, by design.")}</strong><p>{t("A private space for every conversation.")}</p></div>{account()}</aside>
-    <header className="mobile-header"><Button ref={menuButtonRef} variant="ghost" icon="list" iconOnly aria-label={t("Open navigation")} aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} /><div className="mobile-header__context"><Link href={parentPage?.href ?? '/sessions'} aria-label={t(parentPage?.label ?? 'T Lingual home')}><Brand compact /></Link><strong>{t(pageName)}</strong></div><InterfaceMenus /></header>
-    <Drawer open={mobileOpen} onOpenChange={setMobileOpen} side="left" size="sm" closeLabel={t("Close navigation")}><DrawerHeader><DrawerTitle>{t("Mobile navigation")}</DrawerTitle></DrawerHeader><DrawerBody><button type="button" className="app-sidebar__brand" aria-label={t("Workspace guide")} title={t("Workspace guide")} onClick={() => { setMobileOpen(false); setHelpOpen(true) }}><Brand /></button>{nav()}</DrawerBody><DrawerFooter>{account()}</DrawerFooter></Drawer>
-    <div className="app-topbar"><nav className="app-breadcrumb" aria-label={t("Breadcrumb")}><Link href="/sessions">{t("My workspace")}</Link><UIIcon name="chevronRight" size={14} />{parentPage && <><Link href={parentPage.href}>{t(parentPage.label)}</Link><UIIcon name="chevronRight" size={14} /></>}<strong aria-current="page">{t(pageName)}</strong></nav><div className="app-topbar__actions">{demo && <span className="environment-label">{t("Demo workspace")}</span>}<InterfaceMenus /></div></div>
+    <aside className="app-sidebar"><button type="button" className="app-sidebar__brand" aria-label={t("Workspace guide")} title={t("Workspace guide")} onClick={() => setHelpOpen(true)}><Brand /></button>{nav()}<SidebarStorage />{account()}</aside>
+    <header className="mobile-header"><Button ref={menuButtonRef} variant="ghost" icon="list" iconOnly aria-label={t("Open navigation")} aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} /><div className="mobile-header__context"><Link href={parent?.href ?? home} aria-label={parent?.href ? parent.label : t('T Lingual home')}><Brand compact /></Link><strong dir="auto">{current.label}</strong></div><InterfaceMenus /></header>
+    <Drawer open={mobileOpen} onOpenChange={setMobileOpen} side="left" size="sm" closeLabel={t("Close navigation")}><DrawerHeader><DrawerTitle>{t("Mobile navigation")}</DrawerTitle></DrawerHeader><DrawerBody><button type="button" className="app-sidebar__brand" aria-label={t("Workspace guide")} title={t("Workspace guide")} onClick={() => { setMobileOpen(false); setHelpOpen(true) }}><Brand /></button>{nav()}<SidebarStorage onNavigate={() => setMobileOpen(false)} /></DrawerBody><DrawerFooter>{account()}</DrawerFooter></Drawer>
+    <div className="app-topbar"><nav className="app-breadcrumb" aria-label={t("Breadcrumb")}>{crumbs.slice(0, -1).map((crumb, index) => <span key={index} className="app-breadcrumb__step">{crumb.href ? <Link href={crumb.href} dir="auto">{crumb.label}</Link> : <span dir="auto">{crumb.label}</span>}<UIIcon name="chevronRight" size={14} /></span>)}<strong aria-current="page" dir="auto">{current.label}</strong></nav><div className="app-topbar__actions">{demo && <span className="environment-label">{t("Demo workspace")}</span>}<InterfaceMenus /></div></div>
     {!online && <div className="offline-banner" role="status"><Icon name="warning" size={17} />{t("You’re offline. Live audio and changes cannot sync until the connection returns.")}</div>}
     <main ref={mainRef} id="main-content" className="app-main" tabIndex={-1}><div key={page.key} className="app-page" style={{ '--_dir': page.direction } as CSSProperties}>{children}</div></main>
+    <WorkspaceDialog open={creatingWorkspace} onClose={() => setCreatingWorkspace(false)} onSaved={(created) => navigate(`/workspaces/${created.id}`)} />
     <Dialog open={helpOpen} title={t("A little help, right here")} description={t("From the first word to the final transcript.")} onClose={() => setHelpOpen(false)} footer={<><Button icon="settings" onClick={()=>{setHelpOpen(false);navigate('/setup')}}>{t('Quick setup')}</Button><Button variant="primary" onClick={() => setHelpOpen(false)}>{t("Got it")}</Button></>}>
-      <div className="workspace-guide"><div><span>01</span><section><h3>{t("Set up a conversation")}</h3><p>{t("Create a session, give it a name and choose the languages you need.")}</p></section></div><div><span>02</span><section><h3>{t("Stay in the conversation")}</h3><p>{t("Start interpretation to follow speech and its translation side by side. Pause whenever you need a moment.")}</p></section></div><div><span>03</span><section><h3>{t("Take your words with you")}</h3><p>{t("Stop recording to save your words. Continue the same session whenever you need. Search, copy or export the transcript whenever you need it.")}</p></section></div>{demo && <aside><strong>{t("You’re exploring the demo")}</strong><p>{t("Audio and passkey ceremonies are simulated. Sample conversations stream automatically; your changes stay in this browser. No microphone is recorded.")}</p></aside>}<footer><Kbd>?</Kbd><span>{t("Open this guide from anywhere")}</span></footer></div>
+      <div className="workspace-guide"><div><span>01</span><section><h3>{t("Set up a conversation")}</h3><p>{t("Create a session, give it a name and choose the languages you need.")}</p></section></div><div><span>02</span><section><h3>{t("Stay in the conversation")}</h3><p>{t("Start interpretation to follow speech and its translation side by side. Pause whenever you need a moment.")}</p></section></div><div><span>03</span><section><h3>{t("Take your words with you")}</h3><p>{t("Stop recording to save your words. Continue the same session whenever you need. Search, copy or export the transcript whenever you need it.")}</p></section></div>{demo && <aside><strong>{t("You’re exploring the demo")}</strong><p>{t("Audio and passkey ceremonies are simulated. Sample conversations stream automatically; your changes stay in this browser. No microphone is recorded.")}</p></aside>}</div>
     </Dialog>
-  </div>
+  </div></AccountStorageProvider>
 }

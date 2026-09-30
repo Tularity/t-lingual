@@ -1,5 +1,5 @@
 import { captureModeDefaults, defaultLocalPreferences } from '../../app/preferences'
-import { connectMicrophoneCapture, microphoneConstraints } from './audioCapture'
+import { connectMicrophoneCapture, microphoneConstraints, toPcm16 } from './audioCapture'
 
 function node() {
   return { connect: vi.fn((destination: unknown) => destination), type: '', frequency: { value: 0 }, Q: { value: 0 },
@@ -53,5 +53,12 @@ describe('microphone capture modes', () => {
     expect(highpass.connect).toHaveBeenCalledWith(makeup)
     expect(makeup.gain.value).toBe(2)
     expect(makeup.connect).toHaveBeenCalledWith(limiter)
+  })
+})
+
+describe('16-bit audio as sent', () => {
+  it('narrows float samples to 16-bit, clipping what is out of range', () => {
+    const samples = new Float32Array([0, 0.5, -0.5, 1, -1, 2, -2, Number.NaN])
+    expect([...new Int16Array(toPcm16(samples.buffer))]).toEqual([0, 16384, -16384, 32767, -32768, 32767, -32768, 0])
   })
 })

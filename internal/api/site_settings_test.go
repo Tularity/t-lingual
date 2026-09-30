@@ -29,23 +29,30 @@ func TestPublicSiteHelpAndAdminSiteSettingsRequireBoundStepUp(t *testing.T) {
 		t.Fatalf("admin site settings = %d %s", adminRead.Code, adminRead.Body.String())
 	}
 	markdown := "## Registration\nAsk an administrator for a single-use code."
-	scope, err := auth.AdminSiteSettingsAuthorizationScope(markdown, 1)
+	scope, err := auth.AdminSiteSettingsAuthorizationScope(markdown, 1, 1500)
 	if err != nil {
 		t.Fatal(err)
 	}
 	grant := fixture.createAuthorizationGrant(t, "admin", scope)
 	wrong := fixture.requestWithAuthorization(t, http.MethodPut, "/api/v1/admin/site-settings",
-		`{"registrationHelpMarkdown":"Other help","codeAttemptsPerMinute":1}`, "admin", true, grant)
+		`{"registrationHelpMarkdown":"Other help","codeAttemptsPerMinute":1,"draftTranslationIntervalMs":1500}`, "admin", true, grant)
 	if wrong.Code != http.StatusForbidden {
 		t.Fatalf("wrong payload reused passkey step-up: %d %s", wrong.Code, wrong.Body.String())
 	}
-	body := `{"registrationHelpMarkdown":"## Registration\nAsk an administrator for a single-use code.","codeAttemptsPerMinute":1}`
+	// A changed translation interval is part of what the passkey authorizes.
+	if response := fixture.requestWithAuthorization(t, http.MethodPut, "/api/v1/admin/site-settings",
+		`{"registrationHelpMarkdown":"## Registration\nAsk an administrator for a single-use code.","codeAttemptsPerMinute":1,"draftTranslationIntervalMs":0}`,
+		"admin", true, grant); response.Code != http.StatusForbidden {
+		t.Fatalf("another interval reused passkey step-up: %d %s", response.Code, response.Body.String())
+	}
+	body := `{"registrationHelpMarkdown":"## Registration\nAsk an administrator for a single-use code.","codeAttemptsPerMinute":1,"draftTranslationIntervalMs":1500}`
 	withoutOrigin := fixture.requestWithAuthorization(t, http.MethodPut, "/api/v1/admin/site-settings", body, "admin", false, grant)
 	if withoutOrigin.Code != http.StatusForbidden {
 		t.Fatalf("site mutation without origin = %d", withoutOrigin.Code)
 	}
 	updated := fixture.requestWithAuthorization(t, http.MethodPut, "/api/v1/admin/site-settings", body, "admin", true, grant)
-	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), `"codeAttemptsPerMinute":1`) {
+	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), `"codeAttemptsPerMinute":1`) ||
+		!strings.Contains(updated.Body.String(), `"draftTranslationIntervalMs":1500`) {
 		t.Fatalf("authorized site update = %d %s", updated.Code, updated.Body.String())
 	}
 	public = fixture.requestWithAuthorization(t, http.MethodGet, "/api/v1/site-content", "", "", false, "")
@@ -76,12 +83,12 @@ func TestCodeRatePolicyHotReloadRetainsExactIPWindowAndRetryAfter(t *testing.T) 
 	update := func(attempts int) {
 		t.Helper()
 		markdown := "Ask an administrator for a registration code."
-		scope, err := auth.AdminSiteSettingsAuthorizationScope(markdown, attempts)
+		scope, err := auth.AdminSiteSettingsAuthorizationScope(markdown, attempts, 1000)
 		if err != nil {
 			t.Fatal(err)
 		}
 		grant := fixture.createAuthorizationGrant(t, "admin", scope)
-		body, _ := json.Marshal(map[string]any{"registrationHelpMarkdown": markdown, "codeAttemptsPerMinute": attempts})
+		body, _ := json.Marshal(map[string]any{"registrationHelpMarkdown": markdown, "codeAttemptsPerMinute": attempts, "draftTranslationIntervalMs": 1000})
 		response := fixture.requestWithAuthorization(t, http.MethodPut, "/api/v1/admin/site-settings",
 			string(body), "admin", true, grant)
 		if response.Code != http.StatusOK {

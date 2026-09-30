@@ -152,3 +152,34 @@ func TestLegacyRegistrationCodeAndUnifiedEntryShareSamePerIPBudget(t *testing.T)
 		t.Fatalf("legacy route bypassed shared budget: %d %s", blocked.Code, blocked.Body.String())
 	}
 }
+
+func TestAnAdministratorMakesASignInCodeForThemselves(t *testing.T) {
+	fixture := newAPIFixture(t)
+	adminID := fixture.users["admin"].ID
+	body := `{"kind":"login","targetUserId":"` + adminID + `","ttlSeconds":300}`
+	scope, err := auth.AdminCodeCreateAuthorizationScope("login", adminID, "", "", 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := fixture.requestWithAuthorization(t, http.MethodPost, "/api/v1/admin/codes", body, "admin", true,
+		fixture.createAuthorizationGrant(t, "admin", scope))
+	var code struct {
+		Code string `json:"code"`
+	}
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &code) != nil {
+		t.Fatalf("own sign-in code = %d %s", created.Code, created.Body.String())
+	}
+	// Redeemed elsewhere, it signs the administrator in on another browser.
+	redeemed := fixture.requestWithAuthorization(t, http.MethodPost, "/api/v1/auth/code", `{"code":"`+code.Code+`"}`, "", true, "")
+	if redeemed.Code != http.StatusOK || len(redeemed.Result().Cookies()) != 1 {
+		t.Fatalf("own code redeemed = %d %s", redeemed.Code, redeemed.Body.String())
+	}
+	user, _, err := fixture.auth.Authenticate(context.Background(), redeemed.Result().Cookies()[0].Value)
+	if err != nil || user.ID != adminID {
+		t.Fatalf("own code signed in %#v %v", user, err)
+	}
+	// Their first browser stays signed in.
+	if response := fixture.request(t, http.MethodGet, "/api/v1/auth/me", "", "admin", false); response.Code != http.StatusOK {
+		t.Fatalf("first browser after own code = %d", response.Code)
+	}
+}

@@ -8,9 +8,12 @@ import (
 	"time"
 )
 
+// The hard ceilings on stored PCM. An administrator's storage limit is the
+// working bound on an account; these only stop a runaway recording or account
+// when no limit is set. At 48 kHz a session holds over twelve hours.
 const (
-	maxSessionAudioBytes int64 = 4 << 30
-	maxOwnerAudioBytes   int64 = 32 << 30
+	maxSessionAudioBytes int64 = 8 << 30
+	maxOwnerAudioBytes   int64 = 256 << 30
 )
 
 var safeRecordingID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,96}$`)

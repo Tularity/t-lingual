@@ -50,21 +50,24 @@ func validateUser(user domain.User) error {
 
 func (s *Store) GetUserByID(ctx context.Context, userID string) (domain.User, error) {
 	return scanUser(s.db.QueryRowContext(ctx, `
-		SELECT id, webauthn_id, username, display_name, role, status, created_at, updated_at
+		SELECT `+userColumns+`
 		FROM users WHERE id = ?`, userID))
 }
 
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (domain.User, error) {
 	return scanUser(s.db.QueryRowContext(ctx, `
-		SELECT id, webauthn_id, username, display_name, role, status, created_at, updated_at
+		SELECT `+userColumns+`
 		FROM users WHERE username = ? COLLATE NOCASE`, username))
 }
 
 func (s *Store) GetUserByWebAuthnID(ctx context.Context, webAuthnID []byte) (domain.User, error) {
 	return scanUser(s.db.QueryRowContext(ctx, `
-		SELECT id, webauthn_id, username, display_name, role, status, created_at, updated_at
+		SELECT `+userColumns+`
 		FROM users WHERE webauthn_id = ?`, webAuthnID))
 }
+
+// userColumns is what scanUser reads, in its order.
+const userColumns = `id, webauthn_id, username, display_name, role, status, created_at, updated_at, avatar_version, discoverable`
 
 func scanUser(row rowScanner) (domain.User, error) {
 	var user domain.User
@@ -72,7 +75,7 @@ func scanUser(row rowScanner) (domain.User, error) {
 	var createdAt, updatedAt int64
 	if err := row.Scan(
 		&user.ID, &user.WebAuthnID, &user.Username, &user.DisplayName,
-		&role, &status, &createdAt, &updatedAt,
+		&role, &status, &createdAt, &updatedAt, &user.AvatarVersion, &user.Discoverable,
 	); err != nil {
 		return domain.User{}, mapSQLError(err)
 	}
@@ -92,7 +95,7 @@ func (s *Store) ListUsersAsTrustedControl(ctx context.Context, limit, offset int
 func listUsers(ctx context.Context, queryer rowsQueryer, limit, offset int) ([]domain.User, error) {
 	limit, offset = pagination(limit, offset)
 	rows, err := queryer.QueryContext(ctx, `
-		SELECT id, webauthn_id, username, display_name, role, status, created_at, updated_at
+		SELECT `+userColumns+`
 		FROM users ORDER BY created_at DESC, id LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("store: list users: %w", err)

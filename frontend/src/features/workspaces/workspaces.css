@@ -1,0 +1,35 @@
+.workspaces-page { display:flex; min-height:100%; flex-direction:column; gap:12px; padding-bottom:32px; }
+.workspaces-page__header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.workspaces-page__header p { margin:0; color:var(--tl-text-muted); font-size:12px; font-variant-numeric:tabular-nums; }
+.workspace-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.workspace-row { position:relative; display:grid; grid-template-columns:minmax(0,1fr) minmax(90px,auto) minmax(84px,auto) 40px; align-items:center; gap:8px; border:1px solid var(--tl-border); border-radius:7px; background:var(--tl-surface); transition:border-color 150ms,box-shadow 150ms; }
+.workspace-row:hover { border-color:var(--tl-border-strong); box-shadow:var(--tl-elevation-xs); }
+.workspace-row__link { display:flex; min-width:0; align-items:center; gap:9px; padding:13px 12px; }
+.workspace-row__link::after { content:''; position:absolute; inset:0; border-radius:inherit; }
+.workspace-row__link:focus-visible { outline:none; }.workspace-row:has(.workspace-row__link:focus-visible) { outline:2px solid var(--tl-focus-ring); outline-offset:2px; }
+.workspace-row > button { position:relative; z-index:2; justify-self:center; }
+.workspace-row__symbol { display:grid; width:29px; height:29px; flex:none; place-items:center; border-radius:5px; color:var(--tl-text-brand); background:var(--tl-accent-subtle); }
+.workspace-row__name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:600; }
+.workspace-row__count, .workspace-row__used { color:var(--tl-text-muted); font-size:11px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.workspace-row__used { text-align:right; }
+.workspace-row__pinned { display:inline-grid; flex:none; place-items:center; color:var(--tl-text-brand); }
+.workspace-row__pinned > svg { transform:rotate(40deg); }
+@media(max-width:700px) { .workspace-row { grid-template-columns:minmax(0,1fr) auto 40px; }.workspace-row__used { display:none; } }
+
+.workspace-form { display:grid; gap:18px; }
+.workspace-icons { display:grid; gap:8px; }
+.workspace-icons__grid { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:6px; }
+.workspace-icons__choice { position:relative; display:grid; aspect-ratio:1; place-items:center; border:1px solid var(--tl-border); border-radius:6px; color:var(--tl-text-secondary); background:var(--tl-surface); cursor:pointer; transition:color 150ms,background-color 150ms,border-color 150ms; }
+.workspace-icons__choice:hover { color:var(--tl-text); background:var(--tl-surface-hover); }
+.workspace-icons__choice:has(input:checked) { border-color:var(--tl-accent-border); color:var(--tl-text-brand); background:var(--tl-accent-subtle); }
+.workspace-icons__choice:has(input:focus-visible) { outline:2px solid var(--tl-focus-ring); outline-offset:2px; }
+.workspace-icons__choice:has(input:disabled) { cursor:default; opacity:.6; }
+/* The radio itself stays in place for the keyboard and the pointer, unseen. */
+.workspace-icons__choice input { position:absolute; inset:0; margin:0; opacity:0; cursor:inherit; }
+
+.workspace-delete { display:grid; gap:18px; }
+.workspace-delete__summary { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--tl-danger-border); border-radius:5px; color:var(--tl-danger-fg); background:var(--tl-danger-bg); }
+.workspace-delete__summary--quiet { border-color:var(--tl-border); color:var(--tl-text-brand); background:var(--tl-surface-sunken); }
+.workspace-delete__summary > div { display:grid; min-width:0; gap:2px; }
+.workspace-delete__summary strong { overflow:hidden; color:var(--tl-text); font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
+.workspace-delete__summary span { color:var(--tl-text-secondary); font-size:12px; }

@@ -146,6 +146,7 @@
     align-items: center;
     flex: none;
     color: var(--_adornment);
+    transition: color var(--tl-duration-sm) var(--tl-ease-out);
     font-size: var(--_fs);
     line-height: var(--tl-leading-none);
     white-space: nowrap;

@@ -69,6 +69,10 @@ func TestUserShareViewerDefaultsAndRevocation(t *testing.T) {
 	if err != nil || !ownerAccess.IsOwner || ownerAccess.Permission != domain.ShareRecord || ownerAccess.TargetLanguage != "en" {
 		t.Fatalf("owner access = %#v, %v", ownerAccess, err)
 	}
+	// Where the owner keeps the session is not shared with it.
+	if ownerAccess.Session.WorkspaceID == "" || access.Session.WorkspaceID != "" {
+		t.Fatalf("workspace owner=%q recipient=%q", ownerAccess.Session.WorkspaceID, access.Session.WorkspaceID)
+	}
 	accessible, err := service.ListAccessibleSessions(ctx, viewer, 20, 0)
 	if err != nil || len(accessible) != 1 || accessible[0].Session.ID != session.ID {
 		t.Fatalf("accessible list = %#v, %v", accessible, err)
@@ -233,9 +237,22 @@ func TestShareExpiryDisabledAccountsAndBoundedRecipientSearch(t *testing.T) {
 	if _, err := service.SearchUsers(ctx, recipient.ID, " "); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("empty user search = %v", err)
 	}
+	findable := true
+	discoverable := func(userID string) {
+		if _, err := database.UpdateProfile(ctx, userID, store.ProfileUpdate{Discoverable: &findable}, service.now()); err != nil {
+			t.Fatal(err)
+		}
+	}
 	percent := domain.User{ID: "usr_percent", WebAuthnID: bytes.Repeat([]byte{3}, 64), Username: "percent", DisplayName: "Literal % mark", Role: domain.RoleUser,
 		Status: domain.UserActive, CreatedAt: service.now(), UpdatedAt: service.now()}
 	if err := database.CreateUser(ctx, percent); err != nil {
+		t.Fatal(err)
+	}
+	discoverable(percent.ID)
+	// Someone who has not chosen to be found is not, even by their exact name.
+	hidden := domain.User{ID: "usr_hidden", WebAuthnID: bytes.Repeat([]byte{200}, 64), Username: "hidden-percent", DisplayName: "Hidden % mark", Role: domain.RoleUser,
+		Status: domain.UserActive, CreatedAt: service.now(), UpdatedAt: service.now()}
+	if err := database.CreateUser(ctx, hidden); err != nil {
 		t.Fatal(err)
 	}
 	for index := range 23 {
@@ -245,10 +262,14 @@ func TestShareExpiryDisabledAccountsAndBoundedRecipientSearch(t *testing.T) {
 		if err := database.CreateUser(ctx, user); err != nil {
 			t.Fatal(err)
 		}
+		discoverable(user.ID)
 	}
 	results, err := service.SearchUsers(ctx, recipient.ID, "%")
 	if err != nil || len(results) != 1 || results[0].ID != percent.ID {
 		t.Fatalf("literal wildcard search = %#v, %v", results, err)
+	}
+	if results, err := service.SearchUsers(ctx, recipient.ID, "hidden-percent"); err != nil || len(results) != 0 {
+		t.Fatalf("undiscoverable person found = %#v, %v", results, err)
 	}
 	results, err = service.SearchUsers(ctx, recipient.ID, "Person")
 	if err != nil || len(results) != 20 {

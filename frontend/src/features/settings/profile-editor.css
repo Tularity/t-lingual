@@ -1,0 +1,18 @@
+.account-section>.settings-card+.settings-card{margin-top:14px}
+.profile-editor__identity{display:flex;align-items:center;gap:16px;padding:20px;border-bottom:1px solid var(--tl-divider)}
+.profile-editor__who{display:grid;flex:1;min-width:0;gap:3px}
+.profile-editor__who strong{overflow-wrap:anywhere;font-size:17px}
+.profile-editor__who span{color:var(--tl-text-secondary);font-size:12px}
+/* The picture is also the way to change it. */
+.profile-editor__avatar{position:relative;flex:none;padding:0;border:0;border-radius:50%;background:none;cursor:pointer}
+.profile-editor__avatar .tl-avatar{transition:filter 150ms}
+.profile-editor__avatar:hover .tl-avatar{filter:brightness(.92)}
+.profile-editor__avatar:focus-visible{outline:2px solid var(--tl-focus-ring);outline-offset:3px}
+.profile-editor__camera{position:absolute;right:-2px;bottom:-2px;display:grid;width:24px;height:24px;place-items:center;border:2px solid var(--tl-surface);border-radius:50%;color:var(--tl-text-on-accent);background:var(--tl-accent)}
+.profile-editor__actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.profile-editor__name{display:flex;align-items:flex-end;gap:8px;min-width:0}
+.profile-editor__name .tl-field{flex:1;min-width:0}
+.profile-editor__name .tl-field__label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;border:0;clip:rect(0,0,0,0);white-space:nowrap}
+.profile-editor__preview{display:flex;align-items:flex-end;justify-content:center;gap:18px;padding:8px 0}
+.profile-editor__preview img{border-radius:50%;object-fit:cover;box-shadow:0 0 0 1px var(--tl-border)}
+@media(max-width:560px){.profile-editor__identity{flex-wrap:wrap}.profile-editor__actions{justify-content:flex-start}}

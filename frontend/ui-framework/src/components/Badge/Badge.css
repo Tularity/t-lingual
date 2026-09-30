@@ -138,6 +138,8 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding-block: var(--tl-glyph-room);
+    margin-block: calc(-1 * var(--tl-glyph-room));
   }
 
   /* The tint and the solid fill are both background-color, which forced colors

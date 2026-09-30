@@ -24,7 +24,7 @@ vi.mock('../transcript/TranscriptViewport', async () => {
     return <div data-testid="transcript-projection">{segments.map(segment => <span key={segment.id}>{segment.translationStatus}:{segment.translation || '[empty]'}</span>)}</div>
   } }
 })
-vi.mock('../transcript/useTranscriptPiP', () => ({ TranscriptPiPButton: () => null }))
+vi.mock('../transcript/useTranscriptPiP', () => ({ TranscriptPiPButton: () => null, useTranscriptPiP: () => ({ supported: false, isOpen: false, toggle: () => {}, error: '', portal: null }) }))
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -76,6 +76,19 @@ describe('persisted transcript streaming events', () => {
     expect(screen.getByText('failed:[empty]')).toBeInTheDocument()
     act(() => source.emit({ type: 'translation', segmentId: 'seg_1', targetLanguage: 'fr', translation: 'Bon', status: 'pending', revision: 2 }))
     expect(screen.getByText('failed:[empty]')).toBeInTheDocument()
+  })
+
+  it('shows who else has the session open as they come and go', async () => {
+    render(<ToastProvider><SessionDetailPage sessionId="ses_1" /></ToastProvider>)
+    await screen.findByRole('heading', { name: 'Discussion' })
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+    const source = FakeEventSource.instances[0]!
+    const me = { key: 'me', name: 'Alice', kind: 'user', userId: 'alice', isMe: true }
+    expect(screen.queryByRole('button', { name: /people here/u })).not.toBeInTheDocument()
+    act(() => source.emit({ type: 'presence', presence: { people: [me, { key: 'guest', name: 'Guest', kind: 'guest', isMe: false }], total: 2 } }))
+    expect(screen.getByRole('button', { name: '2 people here' })).toBeInTheDocument()
+    act(() => source.emit({ type: 'presence', presence: { people: [me], total: 1 } }))
+    expect(screen.queryByRole('button', { name: /people here/u })).not.toBeInTheDocument()
   })
 
   it('never merges an old-language reader window into the new target after switching', async () => {

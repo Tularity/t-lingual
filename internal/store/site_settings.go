@@ -12,14 +12,19 @@ import (
 )
 
 type SiteSettings struct {
-	RegistrationHelpMarkdown string    `json:"registrationHelpMarkdown"`
-	CodeAttemptsPerMinute    int       `json:"codeAttemptsPerMinute"`
-	UpdatedAt                time.Time `json:"updatedAt"`
+	RegistrationHelpMarkdown string `json:"registrationHelpMarkdown"`
+	CodeAttemptsPerMinute    int    `json:"codeAttemptsPerMinute"`
+	// DraftTranslationIntervalMS is the least time from one live-translation
+	// request for a line still being spoken to the next; zero asks again as
+	// soon as the last one is done. A finished line is translated at once.
+	DraftTranslationIntervalMS int       `json:"draftTranslationIntervalMs"`
+	UpdatedAt                  time.Time `json:"updatedAt"`
 }
 
 func ValidateSiteSettings(value SiteSettings) error {
 	text := value.RegistrationHelpMarkdown
 	if value.CodeAttemptsPerMinute < 1 || value.CodeAttemptsPerMinute > 10 ||
+		value.DraftTranslationIntervalMS < 0 || value.DraftTranslationIntervalMS > 10_000 ||
 		len(text) == 0 || len(text) > 8192 || !utf8.ValidString(text) || strings.TrimSpace(text) == "" {
 		return errors.New("store: invalid site settings")
 	}
@@ -35,7 +40,7 @@ func ValidateSiteSettings(value SiteSettings) error {
 func scanSiteSettings(row rowScanner) (SiteSettings, error) {
 	var value SiteSettings
 	var updated int64
-	if err := row.Scan(&value.RegistrationHelpMarkdown, &value.CodeAttemptsPerMinute, &updated); err != nil {
+	if err := row.Scan(&value.RegistrationHelpMarkdown, &value.CodeAttemptsPerMinute, &value.DraftTranslationIntervalMS, &updated); err != nil {
 		return SiteSettings{}, mapSQLError(err)
 	}
 	value.UpdatedAt = decodeTime(updated)
@@ -46,7 +51,7 @@ func scanSiteSettings(row rowScanner) (SiteSettings, error) {
 // never returns credentials, admin identities, or an authorization token.
 func (s *Store) GetSiteSettings(ctx context.Context) (SiteSettings, error) {
 	return scanSiteSettings(s.db.QueryRowContext(ctx, `SELECT registration_help_markdown,
-		code_attempts_per_minute,updated_at FROM site_settings WHERE id=1`))
+		code_attempts_per_minute,draft_translation_interval_ms,updated_at FROM site_settings WHERE id=1`))
 }
 
 func (s *Store) GetSiteSettingsAsAdmin(ctx context.Context, actorID, browserID string, checkedAt time.Time) (SiteSettings, error) {
@@ -63,7 +68,7 @@ func (s *Store) GetSiteSettingsAsAdmin(ctx context.Context, actorID, browserID s
 		return SiteSettings{}, err
 	}
 	value, err := scanSiteSettings(tx.QueryRowContext(ctx, `SELECT registration_help_markdown,
-		code_attempts_per_minute,updated_at FROM site_settings WHERE id=1`))
+		code_attempts_per_minute,draft_translation_interval_ms,updated_at FROM site_settings WHERE id=1`))
 	if err != nil {
 		return SiteSettings{}, err
 	}
@@ -95,8 +100,8 @@ func (s *Store) UpdateSiteSettingsAsAdmin(ctx context.Context, actorID, browserI
 		return SiteSettings{}, err
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE site_settings SET registration_help_markdown=?,
-		code_attempts_per_minute=?,updated_at=? WHERE id=1`,
-		value.RegistrationHelpMarkdown, value.CodeAttemptsPerMinute, encodeTime(checkedAt))
+		code_attempts_per_minute=?,draft_translation_interval_ms=?,updated_at=? WHERE id=1`,
+		value.RegistrationHelpMarkdown, value.CodeAttemptsPerMinute, value.DraftTranslationIntervalMS, encodeTime(checkedAt))
 	if err := requireSingleAffected(result, "update site settings"); err != nil {
 		return SiteSettings{}, fmt.Errorf("store: update site settings: %w", err)
 	}

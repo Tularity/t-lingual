@@ -147,6 +147,8 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding-block: var(--tl-glyph-room);
+    margin-block: calc(-1 * var(--tl-glyph-room));
   }
 
   /* Selection is carried by the raised indicator, and a raised surface is drawn

@@ -67,7 +67,7 @@ describe('explicit development API', () => {
     await expect(tick(api.admin.users())).rejects.toThrow('Administrator')
     await expect(tick(api.passkeys.registrationBegin(staleGrant, { name: 'Other user key' }))).rejects.toThrow('scoped')
     await expect(tick(api.auth.registrationBegin({ invitationCode: created.code, username: 'another', displayName: 'Another' }))).rejects.toThrow('used')
-    expect(window.localStorage.getItem('t-lingual:development-data:v4')).not.toContain(created.code)
+    expect(window.localStorage.getItem('t-lingual:development-data:v5')).not.toContain(created.code)
   })
 
   it('keeps administrative changes and single-use grants across refresh', async () => {
@@ -79,6 +79,103 @@ describe('explicit development API', () => {
     const reloaded = await freshApi()
     expect((await tick(reloaded.admin.users())).find((user) => user.id === 'usr_2')?.role).toBe('admin')
     expect((await tick(reloaded.admin.audit())).at(0)?.action).toBe('user.role.set')
+  })
+
+  it('sets limits only with a grant for exactly that change, and keeps them across refresh', async () => {
+    const { adminChange } = await import('../app/adminChanges')
+    const api = await freshApi()
+    await login(api)
+    const change = await adminChange('limits', 'usr_2', { concurrentRecordings: 2, monthlyRecordingMinutes: null, storageMb: null, workspaces: null, guestLinks: false })
+    const other = await adminChange('limits', 'usr_2', { concurrentRecordings: 9, monthlyRecordingMinutes: null, storageMb: null, workspaces: null, guestLinks: false })
+    await expect(tick(api.admin.setUserLimits(await grant(api, other.scope), 'usr_2', change.body))).rejects.toThrow('scoped to another action')
+    const limits = await tick(api.admin.setUserLimits(await grant(api, change.scope), 'usr_2', change.body))
+    expect(limits.effective).toMatchObject({ concurrentRecordings: 2, guestLinks: false, workspaces: 100 })
+    const reloaded = await freshApi()
+    expect((await tick(reloaded.admin.userDetail('usr_2'))).limits.overrides).toMatchObject({ concurrentRecordings: 2, guestLinks: false, storageMb: null })
+    expect((await tick(reloaded.admin.audit())).at(0)?.action).toBe('user.limits.set')
+  })
+
+  it('changes the defaults every account without its own limits follows', async () => {
+    const { defaultLimitsChange } = await import('../app/adminChanges')
+    const api = await freshApi()
+    await login(api)
+    const change = await defaultLimitsChange({ concurrentRecordings: 2, monthlyRecordingMinutes: 300, storageMb: 0, workspaces: 10, guestLinks: false })
+    await tick(api.admin.setDefaultLimits(await grant(api, change.scope), change.body))
+    const reloaded = await freshApi()
+    const detail = await tick(reloaded.admin.userDetail('usr_2'))
+    expect(detail.limits.defaults).toMatchObject({ concurrentRecordings: 2, workspaces: 10, guestLinks: false })
+    expect(detail.limits.effective).toMatchObject({ concurrentRecordings: 2, monthlyRecordingMinutes: 300 })
+    expect((await tick(reloaded.admin.defaultLimits())).builtIn.concurrentRecordings).toBe(1)
+  })
+
+  it('takes a passkey or a browser away from someone only with a grant for that one', async () => {
+    const { adminRemovalScope } = await import('../app/adminChanges')
+    const api = await freshApi()
+    await login(api)
+    const security = await tick(api.admin.userSecurity('usr_2'))
+    expect(security.passkeys.length).toBeGreaterThan(0)
+    expect(security.sessions.length).toBeGreaterThan(0)
+    const [browser] = security.sessions
+    await expect(tick(api.admin.revokeUserSession(await grant(api, await adminRemovalScope('session', 'usr_2', 'browser_other')), 'usr_2', browser!.id))).rejects.toThrow('scoped to another action')
+    await tick(api.admin.revokeUserSession(await grant(api, await adminRemovalScope('session', 'usr_2', browser!.id)), 'usr_2', browser!.id))
+    const [passkey] = security.passkeys
+    await tick(api.admin.deleteUserPasskey(await grant(api, await adminRemovalScope('passkey', 'usr_2', passkey!.id)), 'usr_2', passkey!.id))
+    const after = await tick(api.admin.userSecurity('usr_2'))
+    expect(after.passkeys.map((key) => key.id)).not.toContain(passkey!.id)
+    expect(after.sessions).toEqual([])
+    expect((await tick(api.admin.audit())).slice(0, 2).map((event) => event.action)).toEqual(['user.passkey.delete', 'user.session.revoke'])
+  })
+
+  it('reports the account’s storage against its limit', async () => {
+    const { adminChange } = await import('../app/adminChanges')
+    const api = await freshApi()
+    const identity = await login(api)
+    const open = await tick(api.usage.storage())
+    expect(open.limitBytes).toBe(0)
+    expect(open.usedBytes).toBe(open.audioBytes + open.transcriptBytes)
+    expect(open.sessions).toBeGreaterThan(0)
+    const change = await adminChange('limits', identity.user.id, { concurrentRecordings: null, monthlyRecordingMinutes: null, storageMb: 1024, workspaces: null, guestLinks: null })
+    await tick(api.admin.setUserLimits(await grant(api, change.scope), identity.user.id, change.body))
+    const limited = await tick(api.usage.storage())
+    expect(limited.limitBytes).toBe(1024 * 1024 * 1024)
+    expect(limited.availableBytes).toBe(Math.max(0, limited.limitBytes - limited.usedBytes))
+  })
+
+  it('makes no new session and records nothing of an account whose storage is full', async () => {
+    const { adminChange } = await import('../app/adminChanges')
+    const api = await freshApi()
+    const identity = await login(api)
+    const [owned] = (await tick(api.sessions.list({ limit: 1 }))).items
+    expect((await tick(api.sessions.recordingAdmission(owned!.id))).allowed).toBe(true)
+    const change = await adminChange('limits', identity.user.id, { concurrentRecordings: null, monthlyRecordingMinutes: null, storageMb: 1, workspaces: null, guestLinks: null })
+    await tick(api.admin.setUserLimits(await grant(api, change.scope), identity.user.id, change.body))
+    expect(await tick(api.sessions.recordingAdmission(owned!.id))).toEqual({ allowed: false, reason: 'storage_full' })
+    await expect(tick(api.sessions.create({ title: 'One more', sourceLanguage: 'en', targetLanguage: 'fr' }))).rejects.toThrow('Your storage is full')
+  })
+
+  it('deletes an account with its sessions only with a grant for that account, never one’s own', async () => {
+    const api = await freshApi()
+    const identity = await login(api)
+    await expect(tick(api.admin.deleteUser(await grant(api, `admin:user:delete:${identity.user.id}`), identity.user.id))).rejects.toThrow('own account')
+    await expect(tick(api.admin.deleteUser(await grant(api, 'admin:user:delete:usr_3'), 'usr_2'))).rejects.toThrow('scoped to another action')
+    await tick(api.admin.deleteUser(await grant(api, 'admin:user:delete:usr_2'), 'usr_2'))
+    const reloaded = await freshApi()
+    expect((await tick(reloaded.admin.users())).some((user) => user.id === 'usr_2')).toBe(false)
+    expect((await tick(reloaded.admin.audit())).at(0)?.action).toBe('user.delete')
+  })
+
+  it('reports usage for the period asked, one’s own or everyone’s', async () => {
+    const api = await freshApi()
+    await login(api)
+    const mine = await tick(api.usage.mine({ days: 7, offset: 480 }))
+    expect(mine.report.days).toHaveLength(7)
+    expect(mine.report.users).toBeUndefined()
+    const site = await tick(api.admin.usage({ days: 30, offset: 480 }))
+    expect(site.report.days).toHaveLength(30)
+    expect(site.report.users?.length).toBeGreaterThan(1)
+    const person = await tick(api.admin.usage({ days: 30, offset: 480, user: 'usr_2' }))
+    expect(person.user?.id).toBe('usr_2')
+    expect(person.limits?.concurrentRecordings).toBe(1)
   })
 
   it('ships a lived-in transcript archive and settles translations interrupted by stop', async () => {

@@ -83,6 +83,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding-block: var(--tl-glyph-room);
+    margin-block: calc(-1 * var(--tl-glyph-room));
   }
 
   .tl-select__sizer {
@@ -95,7 +97,12 @@
     align-items: center;
     font-size: var(--_chevron-size);
     color: var(--_chevron);
-    transition: var(--tl-transition-control);
+    transition: var(--tl-transition-control), rotate var(--tl-duration-lg) var(--tl-ease-signature);
+  }
+
+  /* Open, the chevron turns to point back up at the field it came from. */
+  .tl-select__control[aria-expanded='true'] .tl-select__chevron {
+    rotate: 180deg;
   }
 
   /* -- States ------------------------------------------------------------- */

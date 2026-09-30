@@ -16,6 +16,13 @@
    * every current engine, is not clipped by an ancestor's `overflow: hidden`,
    * and — unlike box-shadow — survives `forced-colors: active`, where a
    * shadow-based ring disappears completely. */
+  /* At rest the ring is already there, with no width and no colour, so a
+   * control that transitions it (--tl-transition-control does) draws it in
+   * and out rather than switching it on and off. */
+  [data-tl] {
+    outline: 0 solid transparent;
+  }
+
   [data-tl]:focus-visible,
   [data-tl] :focus-visible {
     outline: var(--tl-focus-width) solid var(--tl-focus-ring);

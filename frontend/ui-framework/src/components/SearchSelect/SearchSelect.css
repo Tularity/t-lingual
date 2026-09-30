@@ -1,0 +1,140 @@
+@layer tl.components {
+  /* The panel is the Popover's, trimmed to a list's padding. */
+  .tl-search-select__panel.tl-popover__panel {
+    display: grid;
+    gap: var(--tl-space-3);
+    width: min(340px, calc(100vw - var(--tl-space-8) * 2));
+    padding: var(--tl-space-3);
+    overflow: hidden;
+  }
+
+  .tl-search-select__search {
+    display: flex;
+    align-items: center;
+    gap: var(--tl-space-4);
+    padding: var(--tl-space-4) var(--tl-space-5);
+    color: var(--tl-text-muted);
+    background: var(--tl-surface);
+    border: 1px solid var(--tl-border);
+    border-radius: var(--tl-radius-sm);
+    transition: var(--tl-transition-control);
+  }
+
+  .tl-search-select__search:focus-within {
+    border-color: var(--tl-accent-border);
+    color: var(--tl-text-secondary);
+  }
+
+  .tl-search-select__search input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    color: var(--tl-text);
+    background: transparent;
+    font: inherit;
+    font-size: var(--tl-text-sm);
+  }
+
+  .tl-search-select__search input::-webkit-search-cancel-button {
+    appearance: none;
+  }
+
+  .tl-search-select__list {
+    display: grid;
+    gap: 2px;
+    max-block-size: min(300px, calc(var(--_available-height, 100dvh) - 70px));
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--tl-border-strong) transparent;
+  }
+
+  /* A row of the list: a Menu row's shape, highlighted by the active row
+   * rather than by focus, since focus never leaves the search box. */
+  .tl-search-select__option {
+    --_bg: transparent;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--tl-space-5);
+    min-height: 30px;
+    padding: var(--tl-space-3) var(--tl-space-5);
+    color: var(--tl-text);
+    background: var(--_bg);
+    border-radius: var(--tl-radius-sm);
+    font-size: var(--tl-text-sm);
+    line-height: var(--tl-leading-snug);
+    cursor: pointer;
+    user-select: none;
+    transition: var(--tl-transition-control);
+  }
+
+  /* A row with a second line gets the room of two lines, not one. */
+  .tl-search-select__option:has(.tl-search-select__description) {
+    min-height: 42px;
+    padding-block: var(--tl-space-4);
+  }
+
+  .tl-search-select__option[data-active] {
+    --_bg: color-mix(in oklab, var(--tl-accent) 16%, transparent);
+  }
+
+  .tl-search-select__option[aria-disabled='true'] {
+    color: var(--tl-text-disabled);
+    cursor: default;
+  }
+
+  .tl-search-select__option[aria-selected='true']::before {
+    content: '';
+    position: absolute;
+    inset-block: 5px;
+    inset-inline-start: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--tl-accent-emphasis);
+  }
+
+  .tl-search-select__icon {
+    flex: none;
+    display: inline-flex;
+    color: var(--tl-text-muted);
+  }
+
+  .tl-search-select__text {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .tl-search-select__label,
+  .tl-search-select__description {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tl-search-select__description {
+    color: var(--tl-text-muted);
+    font-size: var(--tl-text-xs);
+  }
+
+  .tl-search-select__empty {
+    margin: 0;
+    padding: var(--tl-space-8) var(--tl-space-5);
+    color: var(--tl-text-muted);
+    font-size: var(--tl-text-sm);
+    text-align: center;
+  }
+
+  @media (forced-colors: active) {
+    .tl-search-select__option[data-active] {
+      outline: 1px solid Highlight;
+    }
+    .tl-search-select__option[aria-selected='true']::before {
+      background: Highlight;
+    }
+  }
+}

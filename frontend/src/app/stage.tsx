@@ -15,6 +15,12 @@ export interface Stage {
   /** The auth status the screen shows, which trails the real one while a curtain covers the change. */
   shown: Status
   curtain: CurtainState | null
+  /**
+   * Plays the sign-in's curtain for someone already signed in who chooses to
+   * go on from the login page, exactly as though they had just signed in.
+   * Returns false where it plays nothing (reduced motion).
+   */
+  enterWorkspace: () => boolean
   /** The sign-in's dots have begun to leave for the workspace's logo: it is uncovered. */
   finishSignIn: () => void
   /** …and they have all arrived, and it is uncovered in full: the curtain can go. */
@@ -109,6 +115,12 @@ export function useStage(status: Status): Stage {
   const finishSignIn = useCallback(() => {
     setCurtain((current) => (current?.kind === 'enter' && current.stage === 'play' ? { ...current, stage: 'reveal' } : current))
   }, [])
+  const enterWorkspace = useCallback(() => {
+    if (reduced) return false
+    setCurtain({ kind: 'enter', stage: 'leave', id: serial })
+    setSerial(serial + 1)
+    return true
+  }, [reduced, serial])
   const endSignIn = useCallback(() => {
     setCurtain((current) => (current?.kind === 'enter' && current.stage === 'reveal' ? null : current))
   }, [])
@@ -130,6 +142,7 @@ export function useStage(status: Status): Stage {
   return {
     shown,
     curtain,
+    enterWorkspace,
     finishSignIn,
     endSignIn,
     beginSignOut,
@@ -137,10 +150,14 @@ export function useStage(status: Status): Stage {
   }
 }
 
-const StageContext = createContext<Pick<Stage, 'beginSignOut' | 'cancelSignOut'>>({
+/** What the pages themselves may ask of the stage. */
+export type StageControls = Pick<Stage, 'enterWorkspace' | 'beginSignOut' | 'cancelSignOut'>
+
+const StageContext = createContext<StageControls>({
+  enterWorkspace: () => false,
   beginSignOut: () => {},
   cancelSignOut: () => {},
 })
 
 export const StageProvider = StageContext.Provider
-export const useSignOutStage = () => useContext(StageContext)
+export const useStageControls = () => useContext(StageContext)

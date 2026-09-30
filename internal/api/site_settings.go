@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/Tularity/t-lingual/internal/auth"
 	"github.com/Tularity/t-lingual/internal/store"
@@ -32,21 +33,22 @@ func (a *API) getAdminSiteSettings(w http.ResponseWriter, r *http.Request, curre
 
 func (a *API) putAdminSiteSettings(w http.ResponseWriter, r *http.Request, current identity) error {
 	var input struct {
-		RegistrationHelpMarkdown *string `json:"registrationHelpMarkdown"`
-		CodeAttemptsPerMinute    *int    `json:"codeAttemptsPerMinute"`
+		RegistrationHelpMarkdown   *string `json:"registrationHelpMarkdown"`
+		CodeAttemptsPerMinute      *int    `json:"codeAttemptsPerMinute"`
+		DraftTranslationIntervalMS *int    `json:"draftTranslationIntervalMs"`
 	}
 	if err := webapi.DecodeJSON(w, r, 16<<10, &input); err != nil {
 		return err
 	}
-	if input.RegistrationHelpMarkdown == nil || input.CodeAttemptsPerMinute == nil {
-		return webapi.BadRequest("INVALID_SITE_SETTINGS", "Provide both site settings fields.")
+	if input.RegistrationHelpMarkdown == nil || input.CodeAttemptsPerMinute == nil || input.DraftTranslationIntervalMS == nil {
+		return webapi.BadRequest("INVALID_SITE_SETTINGS", "Provide every site settings field.")
 	}
 	value := store.SiteSettings{RegistrationHelpMarkdown: *input.RegistrationHelpMarkdown,
-		CodeAttemptsPerMinute: *input.CodeAttemptsPerMinute}
+		CodeAttemptsPerMinute: *input.CodeAttemptsPerMinute, DraftTranslationIntervalMS: *input.DraftTranslationIntervalMS}
 	if err := store.ValidateSiteSettings(value); err != nil {
-		return webapi.BadRequest("INVALID_SITE_SETTINGS", "Check the registration help and code attempt limit.")
+		return webapi.BadRequest("INVALID_SITE_SETTINGS", "Check the registration help, the code attempt limit and the translation interval.")
 	}
-	scope, err := auth.AdminSiteSettingsAuthorizationScope(value.RegistrationHelpMarkdown, value.CodeAttemptsPerMinute)
+	scope, err := auth.AdminSiteSettingsAuthorizationScope(value.RegistrationHelpMarkdown, value.CodeAttemptsPerMinute, value.DraftTranslationIntervalMS)
 	if err != nil {
 		return err
 	}
@@ -56,6 +58,9 @@ func (a *API) putAdminSiteSettings(w http.ResponseWriter, r *http.Request, curre
 	updated, err := a.admin.UpdateSiteSettings(r.Context(), currentAdminAuthority(current), value)
 	if err != nil {
 		return err
+	}
+	if a.rooms != nil {
+		a.rooms.SetDraftTranslationInterval(time.Duration(updated.DraftTranslationIntervalMS) * time.Millisecond)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	webapi.WriteJSON(w, http.StatusOK, updated)

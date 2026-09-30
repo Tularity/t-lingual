@@ -153,17 +153,21 @@
       opacity   var(--tl-duration-sm) var(--tl-ease-out);
 
     /* Control feedback: hover, press, focus. Fast enough to feel like the
-     * control itself rather than an animation of it. */
+     * control itself rather than an animation of it. The focus ring is part
+     * of it, a little slower: it grows out of the control's edge as it takes
+     * its colour, and draws back in the same way when focus moves on. */
     --tl-transition-control:
       background-color var(--tl-duration-2xs) var(--tl-ease-out),
       border-color     var(--tl-duration-2xs) var(--tl-ease-out),
       color            var(--tl-duration-2xs) var(--tl-ease-out),
-      box-shadow       var(--tl-duration-2xs) var(--tl-ease-out);
+      box-shadow       var(--tl-duration-2xs) var(--tl-ease-out),
+      var(--tl-transition-focus);
 
     /* Focus ring only. Never transition `outline-offset` alone — it reads as a
-     * wobble on keyboard traversal. */
+     * wobble on keyboard traversal; the ring grows by its width instead. */
     --tl-transition-focus:
-      outline-color var(--tl-duration-2xs) var(--tl-ease-out);
+      outline-color var(--tl-duration-md) var(--tl-ease-out),
+      outline-width var(--tl-duration-md) var(--tl-ease-out);
 
     /* Size changes driven by measurement (a panel growing to fit new content). */
     --tl-transition-size:

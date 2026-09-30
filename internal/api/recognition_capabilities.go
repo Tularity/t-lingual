@@ -25,6 +25,8 @@ func (a *API) getRecognitionCapabilities(w http.ResponseWriter, r *http.Request,
 		return &webapi.Error{Status: 503, Code: "ASR_CAPABILITIES_UNAVAILABLE", Message: "Recognition languages are temporarily unavailable."}
 	}
 	_, automaticErr := asr.NormalizeLanguage("auto", capabilities)
-	webapi.WriteJSON(w, 200, map[string]any{"configured": true, "languages": asr.RecognitionLanguages(capabilities), "automatic": automaticErr == nil, "diarization": capabilities.Diarization})
+	// Whether a recording could start now: recognition is up and has room.
+	available := a.rooms == nil || a.rooms.RecognitionAvailable(r.Context())
+	webapi.WriteJSON(w, 200, map[string]any{"configured": true, "available": available, "languages": asr.RecognitionLanguages(capabilities), "automatic": automaticErr == nil, "diarization": capabilities.Diarization})
 	return nil
 }

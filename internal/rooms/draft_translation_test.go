@@ -488,3 +488,57 @@ func TestValidatedFinalEventCarriesResolvedLanguageAndUncertainty(t *testing.T) 
 		t.Fatal("validated final event missing")
 	}
 }
+
+func TestDraftTranslationWaitsTheIntervalUnlessTheRequestWasSlowOrTheLineFinished(t *testing.T) {
+	provider := &controlledDraftTranslator{calls: make(chan *draftCall, 8)}
+	svc, database, resolver, session, viewers := roomFixture(t, provider)
+	const interval = 400 * time.Millisecond
+	svc.SetDraftTranslationInterval(interval)
+	lease, cancel := testDraftLease(t, svc, resolver, session, viewers[0], provider)
+	defer cancel()
+	update := func(revision int64, text string) {
+		svc.UpdateDraft(lease, DraftTranslationInput{ID: "seg_paced", Sequence: 1, Revision: revision, Text: text})
+	}
+
+	// The first words go out at once.
+	update(1, "Hello")
+	started := time.Now()
+	first := awaitDraftCall(t, provider)
+	update(2, "Hello there")
+	close(first.release)
+	second := awaitDraftCall(t, provider)
+	if elapsed := time.Since(started); elapsed < interval-20*time.Millisecond {
+		t.Fatalf("changed line asked for again after %s, before the %s interval", elapsed, interval)
+	}
+	if second.input.Text != "Hello there" {
+		t.Fatalf("second draft = %q", second.input.Text)
+	}
+
+	// A request that took longer than the interval is followed at once.
+	update(3, "Hello there, everyone")
+	time.Sleep(interval + 100*time.Millisecond)
+	released := time.Now()
+	close(second.release)
+	third := awaitDraftCall(t, provider)
+	if waited := time.Since(released); waited > 150*time.Millisecond {
+		t.Fatalf("slow request was followed after %s", waited)
+	}
+
+	// A finished line does not wait out the interval.
+	update(4, "Hello there, everyone here")
+	close(third.release)
+	time.Sleep(50 * time.Millisecond)
+	final := domain.Segment{ID: "seg_paced", SessionID: session.ID, UserID: session.UserID, Sequence: 1,
+		SourceText: "Hello there, everyone here.", Final: true, DetectedLanguage: "en", LanguageSource: "session",
+		TranslationStatus: domain.TranslationNotRequested, CreatedAt: time.Now().UTC()}
+	if err := database.AppendSegment(context.Background(), session.UserID, final); err != nil {
+		t.Fatal(err)
+	}
+	finalized := time.Now()
+	svc.FinalizeDraft(lease, final)
+	last := awaitDraftCall(t, provider)
+	if waited := time.Since(finalized); waited > 150*time.Millisecond || last.input.Text != final.SourceText {
+		t.Fatalf("final translation waited %s for %q", waited, last.input.Text)
+	}
+	close(last.release)
+}

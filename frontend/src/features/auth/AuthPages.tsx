@@ -1,10 +1,14 @@
 import { lazy, startTransition, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { CodeInput } from '@t-lingual/ui'
+import { UserAvatar } from '../../app/UserAvatar'
 import { Button, Input, Icon, Dialog, LoadingState, Spinner } from '../../design-system'
 import { Brand, InterfaceMenus } from '../../app/AppShell'
 import { ApiError } from '../../api/client'
 import { useAuth } from '../../app/auth'
+import { afterSignIn } from '../../app/pendingShare'
 import { Link, useRouter } from '../../app/router'
+import { useStageControls } from '../../app/stage'
+import type { User } from '../../api/contracts'
 import { errorMessage } from '../../app/utils'
 import { useI18n } from '../../app/i18n'
 import { LanguageLabel } from '../languages'
@@ -14,7 +18,8 @@ import './auth.css'
 const loadRegistrationHelp=()=>import('./RegistrationHelpDialog')
 const RegistrationHelpDialog=lazy(()=>loadRegistrationHelp().then(module=>({default:module.RegistrationHelpDialog})))
 
-function AuthLayout({ title, subtitle, children, footer }: { title: string; subtitle: string; children: ReactNode; footer: ReactNode }) {
+/** `mode` names what the card is showing; a new mode brings the card in afresh. */
+function AuthLayout({ title, subtitle, children, footer, mode }: { title: ReactNode; subtitle: string; children: ReactNode; footer?: ReactNode; mode?: string }) {
   const { t } = useI18n()
   return <main className="auth-page">
     <section className="auth-story" aria-label={t("T Lingual")}>
@@ -30,9 +35,8 @@ function AuthLayout({ title, subtitle, children, footer }: { title: string; subt
           <div className="auth-scene__bottom"><span className="auth-scene__wave"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></span><span>{t("Conversation in progress")}</span></div>
         </div>
       </div>
-      <div className="auth-story__trust"><Icon name="shield" size={17} /><span>{t("A private workspace for every voice.")}</span></div>
     </section>
-    <section className="auth-panel"><div className="auth-interface"><InterfaceMenus /></div><div className="auth-card"><div className="auth-mobile-brand"><Brand /></div><div className="auth-card__heading"><span className="auth-card__eyebrow">{t("YOUR WORKSPACE")}</span><h2>{title}</h2><p>{subtitle}</p></div>{__TLINGUAL_DEVELOPMENT_MOCK__ && <div className="auth-demo" role="status"><Icon name="info" size={17} /><span><strong>{t("Demo preview")}</strong> {t("· Passkey verification is simulated in this development workspace.")}<small className="auth-demo__codes">{t("Test codes 111111, 222222, 333333 and 444444 sign in to a workspace that takes about 3, 7, 9 or 25 seconds to load; 555555 registers a new account.")}</small></span></div>}{children}<div className="auth-card__footer">{footer}</div><p className="auth-security"><Icon name="lock" size={15} />{t("Passkeys and one-time codes · No passwords")}</p></div></section>
+    <section className="auth-panel"><div className="auth-interface"><InterfaceMenus /></div><div key={mode} className="auth-card"><div className="auth-mobile-brand"><Brand /></div><div className="auth-card__heading"><span className="auth-card__eyebrow">{t("YOUR WORKSPACE")}</span><h2>{title}</h2><p>{subtitle}</p></div>{__TLINGUAL_DEVELOPMENT_MOCK__ && <div className="auth-demo" role="status"><Icon name="info" size={17} /><span><strong>{t("Demo preview")}</strong> {t("· Passkey verification is simulated in this development workspace.")}<small className="auth-demo__codes">{t("Test codes 111111, 222222, 333333 and 444444 sign in to a workspace that takes about 3, 7, 9 or 25 seconds to load; 555555 registers a new account.")}</small></span></div>}{children}{footer && <div className="auth-card__footer">{footer}</div>}<p className="auth-security"><Icon name="lock" size={15} />{t("Passkeys and one-time codes · No passwords")}</p></div></section>
   </main>
 }
 
@@ -94,23 +98,56 @@ function CodeAccessButton() {
   </>
 }
 
-export function LoginPage() {
+/**
+ * Signing in. Someone already signed in who comes back here is greeted by
+ * name and shown their account: going on as it plays the same entrance as
+ * signing in; signing in with another account signs this one out first.
+ * `account` is the account the screen shows signed in, if any.
+ */
+export function LoginPage({ account = null }: { account?: User | null }) {
   const { t } = useI18n()
-  const { login } = useAuth()
+  const { login, logout } = useAuth()
   const { navigate } = useRouter()
+  const { enterWorkspace } = useStageControls()
   const [busy, setBusy] = useState(false)
   const [attempts, setAttempts] = useState(0)
   const [error, setError] = useState('')
+  /** The account was just signed out here, so the form takes focus as it comes in. */
+  const [switched, setSwitched] = useState(false)
   const errorRef = useErrorFocus(error, attempts)
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setAttempts(count=>count+1);setBusy(true);setError('')
-    try {await login();navigate('/sessions',{replace:true})}catch(caught){setError(t(errorMessage(caught)))}finally{setBusy(false)}
+    try {await login();navigate(await afterSignIn(),{replace:true})}catch(caught){setError(t(errorMessage(caught)))}finally{setBusy(false)}
   }
-  return <AuthLayout title={t('Welcome back')} subtitle={t('Sign in with your passkey, or use a temporary code from an administrator.')} footer={<span>{t('Use a temporary code to register or access your account.')}</span>}>
+  const errorBox = error&&<div ref={errorRef} className="auth-error" role="alert" tabIndex={-1}><Icon name="warning" size={18}/><span dir="auto">{error}</span></div>
+
+  if (account) {
+    const name = account.displayName || account.username
+    // The greeting's own punctuation around the name, whatever the language.
+    const [before, after = ''] = t('Welcome back, {name}', { name: '\u0000' }).split('\u0000')
+    const goOn = () => { enterWorkspace(); void afterSignIn().then((href) => navigate(href, { replace: true })) }
+    const another = async () => {
+      setAttempts(count=>count+1);setBusy(true);setError('')
+      try { await logout(); setSwitched(true) } catch (caught) { setError(t(errorMessage(caught))) } finally { setBusy(false) }
+    }
+    return <AuthLayout mode="account" title={<>{before}<span className="auth-card__name"><bdi>{name}</bdi></span>{after}</>} subtitle={t('You’re still signed in on this device.')}>
+      <div className="auth-account">
+        {errorBox}
+        <button type="button" className="auth-account__card" aria-label={t('Continue as {name}', { name })} aria-describedby="auth-account-detail" disabled={busy} onClick={goOn}>
+          <UserAvatar user={account} size="lg" alt="" />
+          <span className="auth-account__who"><strong><bdi>{name}</bdi></strong><small id="auth-account-detail"><bdi>{account.username}</bdi> · {account.role === 'admin' ? t('Administrator') : t('Personal account')}</small></span>
+          <span className="auth-account__go" aria-hidden="true"><Icon name="arrowRight" size={20}/></span>
+        </button>
+        <Button variant="ghost" icon="logout" className="auth-account__another" loading={busy} onClick={() => void another()}>{t('Sign in with another account')}</Button>
+      </div>
+    </AuthLayout>
+  }
+
+  return <AuthLayout mode="sign-in" title={t('Welcome back')} subtitle={t('Sign in with your passkey, or use a temporary code from an administrator.')} footer={<span>{t('Use a temporary code to register or access your account.')}</span>}>
     <form className="auth-form" aria-busy={busy} onSubmit={event=>void submit(event)}>
-      {error&&<div ref={errorRef} className="auth-error" role="alert" tabIndex={-1}><Icon name="warning" size={18}/><span dir="auto">{error}</span></div>}
+      {errorBox}
       <div className="auth-passkey-note"><span className="auth-passkey-note__icon"><Icon name="key" size={22}/></span><div><strong>{t('Your passkey is your sign-in')}</strong><p>{t('Choose one from this device, a nearby phone or a security key when your browser prompts you.')}</p></div></div>
-      <Button type="submit" variant="primary" size="lg" icon="key" loading={busy}>{busy?t('Waiting for your passkey…'):t('Continue with a passkey')}</Button>
+      <Button type="submit" variant="primary" size="lg" icon="key" loading={busy} autoFocus={switched}>{busy?t('Waiting for your passkey…'):t('Continue with a passkey')}</Button>
     </form>
     <CodeAccessButton />
   </AuthLayout>

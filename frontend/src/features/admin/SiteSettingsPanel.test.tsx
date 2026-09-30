@@ -7,8 +7,8 @@ import { SiteSettingsPanel } from './SiteSettingsPanel'
 const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), authorize: vi.fn() }))
 vi.mock('../../api/client', () => ({ api: { admin: { siteSettings: mocks.get, updateSiteSettings: mocks.update } } }))
 vi.mock('../../app/passkeyAuthorization', () => ({ authorizePasskeyAction: mocks.authorize }))
-const original = { registrationHelpMarkdown: '# Registration\n\nBring a passkey.', codeAttemptsPerMinute: 3 }
-const expectedScope = (input: typeof original) => `admin:site-settings:update:${createHash('sha256').update(JSON.stringify({ registrationHelpMarkdown: input.registrationHelpMarkdown, codeAttemptsPerMinute: input.codeAttemptsPerMinute }), 'utf8').digest('hex')}`
+const original = { registrationHelpMarkdown: '# Registration\n\nBring a passkey.', codeAttemptsPerMinute: 3, draftTranslationIntervalMs: 1000 }
+const expectedScope = (input: typeof original) => `admin:site-settings:update:${createHash('sha256').update(JSON.stringify({ registrationHelpMarkdown: input.registrationHelpMarkdown, codeAttemptsPerMinute: input.codeAttemptsPerMinute, draftTranslationIntervalMs: input.draftTranslationIntervalMs }), 'utf8').digest('hex')}`
 const renderPanel = () => render(<ToastProvider><SiteSettingsPanel /></ToastProvider>)
 
 beforeEach(() => {
@@ -18,15 +18,16 @@ beforeEach(() => {
 })
 
 describe('site settings administration', () => {
-  it('binds normalized Markdown and rate to the exact scope, then PUTs only after verification', async () => {
+  it('binds normalized Markdown, rate and translation pace to the exact scope, then PUTs only after verification', async () => {
     let finishAuthorization!: (grant: { authorizationToken: string; expiresAt: string }) => void
     mocks.authorize.mockImplementation(() => new Promise(resolve => { finishAuthorization = resolve }))
     renderPanel()
     const editor = await screen.findByRole('textbox', { name: 'Registration instructions (Markdown)' })
     fireEvent.change(editor, { target: { value: '# Updated\r\n\r\n[Guide](/help)' } })
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Attempts per minute per IP' }), { target: { value: '5' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Least time between requests (ms)' }), { target: { value: '1500' } })
     await userEvent.click(screen.getByRole('button', { name: 'Verify and save' }))
-    const input = { registrationHelpMarkdown: '# Updated\n\n[Guide](/help)', codeAttemptsPerMinute: 5 }
+    const input = { registrationHelpMarkdown: '# Updated\n\n[Guide](/help)', codeAttemptsPerMinute: 5, draftTranslationIntervalMs: 1500 }
     await waitFor(() => expect(mocks.authorize).toHaveBeenCalledWith(expectedScope(input)))
     expect(mocks.update).not.toHaveBeenCalled()
     finishAuthorization({ authorizationToken: 'verified-grant', expiresAt: 'later' })
@@ -42,6 +43,9 @@ describe('site settings administration', () => {
     expect(screen.getByRole('button', { name: 'Verify and save' })).toBeDisabled()
     fireEvent.change(editor, { target: { value: '# Valid text' } })
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Attempts per minute per IP' }), { target: { value: '11' } })
+    expect(screen.getByRole('button', { name: 'Verify and save' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Attempts per minute per IP' }), { target: { value: '3' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Least time between requests (ms)' }), { target: { value: '10001' } })
     expect(screen.getByRole('button', { name: 'Verify and save' })).toBeDisabled()
     expect(mocks.authorize).not.toHaveBeenCalled()
     expect(mocks.update).not.toHaveBeenCalled()

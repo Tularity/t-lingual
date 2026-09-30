@@ -6,7 +6,7 @@ import { useI18n } from '../../app/i18n'
 import { InterfaceLanguageMenu } from '../../app/i18n/InterfaceLanguageMenu'
 import { useRouter } from '../../app/router'
 import { errorMessage, languages } from '../../app/utils'
-import { Badge, Button, Card, EmptyState, Icon, LoadingState, useTheme, useToast } from '../../design-system'
+import { Button, Card, EmptyState, Icon, LoadingState, useTheme, useToast } from '../../design-system'
 import { LanguageSelect } from '../languages'
 import { useRecognitionLanguages } from '../sessions/useRecognitionLanguages'
 import './quick-setup.css'
@@ -86,7 +86,7 @@ export function QuickSetupPage({ onComplete }: QuickSetupPageProps) {
             <Card className="quick-setup__card"><div className="quick-setup__card-title"><span>03</span><div><h2>{t('Default recognition language')}</h2><p>{t('Choose automatic recognition or the language you expect to hear most often.')}</p></div></div><LanguageSelect label={t('Default recognition language')} value={effectiveSource} languages={choices} includeAuto onChange={setSource} disabled={saving} />{recognition.loading && <span className="quick-setup__subtle" role="status">{t('Loading recognition languages…')}</span>}{recognition.error && <div className="quick-setup__hint" role="status"><Icon name="info" size={16} />{t('Recognition service is temporarily unavailable. Automatic recognition remains selected.')} <button type="button" onClick={recognition.retry}>{t('Retry')}</button></div>}{!sourceAvailable && <p className="quick-setup__hint">{t('Your previous recognition language is unavailable; automatic recognition will be saved.')}</p>}</Card>
             <Card className="quick-setup__card"><div className="quick-setup__card-title"><span>04</span><div><h2>{t('Colour theme')}</h2><p>{t('Optional. System follows your device; you can change this at any time.')}</p></div></div><div className="quick-setup__themes" role="group" aria-label={t('Colour theme')}>{themeChoices.map(choice => <button type="button" key={choice.value} className="quick-setup__theme" aria-pressed={mode === choice.value} onClick={() => setThemePreference(choice.value)}><Icon name={choice.value === 'system' ? 'sunMoon' : choice.icon} size={19} /><span>{t(choice.label)}</span>{mode === choice.value && <Icon name="check" size={15} />}</button>)}</div></Card>
           </div>
-          <div className="quick-setup__footer"><div><Badge tone="accent">{t('Private by default')}</Badge><span>{t('Your choices belong to your account.')}</span></div><Button type="submit" variant="primary" icon="arrowRight" loading={saving} disabled={recognition.loading || !target || !effectiveSource}>{t('Save and continue')}</Button></div>
+          <div className="quick-setup__footer"><Button type="submit" variant="primary" icon="arrowRight" loading={saving} disabled={recognition.loading || !target || !effectiveSource}>{t('Save and continue')}</Button></div>
           {saveError && <p className="quick-setup__error" role="alert"><Icon name="warning" size={17} />{t('Could not save your choices.')} <span dir="auto">{saveError}</span></p>}
         </form>}</LoadingState>
   </section>

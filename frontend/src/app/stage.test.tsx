@@ -72,6 +72,17 @@ describe('useStage', () => {
     expect(result.current.curtain).toBeNull()
   })
 
+  it('plays a sign-in for someone already signed in who chooses to go on', () => {
+    const { result } = stage('authenticated')
+    let played = false
+    act(() => { played = result.current.enterWorkspace() })
+    expect(played).toBe(true)
+    expect(result.current.curtain).toMatchObject({ kind: 'enter', stage: 'leave' })
+    act(() => vi.advanceTimersByTime(SIGN_IN_LEAVE_MS))
+    expect(result.current.shown).toBe('authenticated')
+    expect(result.current.curtain).toMatchObject({ kind: 'enter', stage: 'play' })
+  })
+
   it('swaps to the login page only once the session has ended and the logo has assembled', () => {
     const { result, rerender } = stage('authenticated')
     act(() => result.current.beginSignOut())
@@ -113,6 +124,7 @@ describe('useStage', () => {
     expect(result.current.curtain).toBeNull()
     act(() => result.current.beginSignOut())
     expect(result.current.curtain).toBeNull()
+    expect(result.current.enterWorkspace()).toBe(false)
   })
 })
 
@@ -147,16 +159,20 @@ describe('Curtain', () => {
 
 describe('page entrances', () => {
   it('treat one page under two spellings as one', () => {
-    expect(pageKey('/')).toBe('/sessions')
-    expect(pageKey('/history/')).toBe('/history')
+    expect(pageKey('/workspaces/')).toBe('/workspaces')
+    expect(pageKey('/workspaces')).toBe('/workspaces')
   })
 
   it('follow the sidebar order, and read going into a session as forward', () => {
-    expect(pageDirection('/sessions', '/settings')).toBe(1)
-    expect(pageDirection('/settings', '/history')).toBe(-1)
-    expect(pageDirection('/history', '/history/ses_1')).toBe(1)
-    expect(pageDirection('/live/ses_1', '/sessions')).toBe(-1)
-    expect(pageDirection('/setup', '/sessions')).toBe(1)
+    const order = ['wsp_a', 'wsp_b']
+    expect(pageDirection('/workspaces/wsp_a', '/settings', order)).toBe(1)
+    expect(pageDirection('/settings', '/workspaces/wsp_b', order)).toBe(-1)
+    expect(pageDirection('/workspaces/wsp_a', '/workspaces/wsp_b', order)).toBe(1)
+    expect(pageDirection('/workspaces/wsp_b', '/workspaces/wsp_a', order)).toBe(-1)
+    expect(pageDirection('/workspaces/wsp_b', '/workspaces', order)).toBe(1)
+    expect(pageDirection('/workspaces/wsp_b', '/sessions/ses_1', order)).toBe(1)
+    expect(pageDirection('/live/ses_1', '/workspaces/wsp_a', order)).toBe(-1)
+    expect(pageDirection('/setup', '/workspaces/wsp_a', order)).toBe(1)
   })
 })
 

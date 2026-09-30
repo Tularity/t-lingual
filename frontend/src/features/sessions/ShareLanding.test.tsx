@@ -2,9 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ShareLanding } from './ShareLanding'
 
-const mocks = vi.hoisted(() => ({ redeem: vi.fn(), navigate: vi.fn() }))
-vi.mock('../../api/client', () => ({ api: { sharing: { redeem: mocks.redeem } } }))
+const mocks = vi.hoisted(() => ({ redeem: vi.fn(), join: vi.fn(), navigate: vi.fn(), status: 'anonymous' as string }))
+vi.mock('../../api/client', () => ({ api: { sharing: { redeem: mocks.redeem, join: mocks.join } } }))
 vi.mock('../../app/router', () => ({ useRouter: () => ({ navigate: mocks.navigate }) }))
+vi.mock('../../app/auth', () => ({ useAuth: () => ({ status: mocks.status }) }))
 vi.mock('../../app/AppShell', () => ({ Brand: () => <span>T Lingual</span> }))
 
 const languageDescriptor = Object.getOwnPropertyDescriptor(navigator, 'language')
@@ -12,9 +13,12 @@ const languageDescriptor = Object.getOwnPropertyDescriptor(navigator, 'language'
 describe('shared link entry', () => {
   beforeEach(() => {
     mocks.redeem.mockReset()
+    mocks.join.mockReset()
     mocks.navigate.mockReset()
+    mocks.status = 'anonymous'
   })
   afterEach(() => {
+    window.sessionStorage.clear()
     window.history.replaceState(null, '', '/')
     if (languageDescriptor) Object.defineProperty(navigator, 'language', languageDescriptor)
   })
@@ -49,5 +53,31 @@ describe('shared link entry', () => {
     await waitFor(() => expect(mocks.redeem).toHaveBeenCalledTimes(2))
     expect(mocks.redeem).toHaveBeenNthCalledWith(2, 'ONE_TIME_LINK_TOKEN', 'en')
     expect(mocks.navigate).toHaveBeenCalledWith('/shared/session_after_retry', { replace: true })
+  })
+
+  it('opens a link as the signed-in person, once the sign-in state is known', async () => {
+    window.history.replaceState(null, '', '/share#MEMBER_TOKEN')
+    mocks.status = 'loading'
+    mocks.join.mockResolvedValue({ sessionId: 'session_joined' })
+    const { rerender } = render(<ShareLanding />)
+    expect(mocks.join).not.toHaveBeenCalled()
+    expect(mocks.redeem).not.toHaveBeenCalled()
+    mocks.status = 'authenticated'
+    rerender(<ShareLanding />)
+    await waitFor(() => expect(mocks.join).toHaveBeenCalledWith('MEMBER_TOKEN'))
+    expect(mocks.navigate).toHaveBeenCalledWith('/sessions/session_joined', { replace: true })
+    expect(mocks.redeem).not.toHaveBeenCalled()
+  })
+
+  it('asks a guest to sign in for a link that is only for signed-in people, and keeps it for afterwards', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', '/share#MEMBERS_ONLY_TOKEN')
+    mocks.redeem.mockRejectedValue(Object.assign(new Error('Sign in to open this link.'), { code: 'SIGN_IN_REQUIRED' }))
+    render(<ShareLanding />)
+    expect(await screen.findByRole('heading', { name: 'Sign in to open this conversation' })).toBeInTheDocument()
+    expect(window.location.href).not.toContain('MEMBERS_ONLY_TOKEN')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(mocks.navigate).toHaveBeenCalledWith('/login')
+    expect(window.sessionStorage.getItem('t-lingual:pending-share')).toBe('MEMBERS_ONLY_TOKEN')
   })
 })

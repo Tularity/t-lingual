@@ -23,6 +23,8 @@ interface AuthValue {
   register: (input: RegistrationInput) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
+  /** Takes in the signed-in account as the server returned it after a change to it. */
+  accountUpdated: (user: User) => void
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
@@ -148,7 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous')
   }, [])
 
-  const value = useMemo(() => ({ user, status, failure, error, login, register, logout, refresh,code,registrationTicket,recoveryExpiresAt,clearRegistrationTicket,onboardingComplete,completeOnboarding,recoveryInProgress,setRecoveryInProgress,clearRecovery }), [user, status, failure, error, login, register, logout, refresh,code,registrationTicket,recoveryExpiresAt,clearRegistrationTicket,onboardingComplete,completeOnboarding,recoveryInProgress,clearRecovery])
+  const accountUpdated = useCallback((next: User) => setUser((current) => current && current.id === next.id ? next : current), [])
+  const value = useMemo(() => ({ user, status, failure, error, login, register, logout, refresh,accountUpdated,code,registrationTicket,recoveryExpiresAt,clearRegistrationTicket,onboardingComplete,completeOnboarding,recoveryInProgress,setRecoveryInProgress,clearRecovery }), [user, status, failure, error, login, register, logout, refresh,accountUpdated,code,registrationTicket,recoveryExpiresAt,clearRegistrationTicket,onboardingComplete,completeOnboarding,recoveryInProgress,clearRecovery])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
@@ -156,4 +159,9 @@ export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) throw new Error('useAuth must be used within AuthProvider')
   return context
+}
+
+/** The signed-in state where there is one; null outside the account's pages. */
+export function useOptionalAuth() {
+  return useContext(AuthContext)
 }

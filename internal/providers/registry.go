@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Tularity/t-lingual/internal/asr"
 	"github.com/Tularity/t-lingual/internal/config"
@@ -152,4 +153,27 @@ func privateHost(host string) bool {
 	return host == "localhost" || strings.HasSuffix(host, ".localhost") ||
 		strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".local") ||
 		(host != "" && !strings.Contains(host, "."))
+}
+
+// Health is the latest word on whether a provider can take more work, as a
+// monitor last sampled it. Known is false until a sample has succeeded, so
+// "no data" is never read as "idle".
+type Health struct {
+	Known bool
+	Ready bool
+	// CanAccept: there is room for new work now.
+	CanAccept bool
+	// Elevated: the provider reports it is under pressure; background work
+	// such as filling gaps should wait.
+	Elevated bool
+	// Room is how much more it would take now: free recognition slots, or
+	// free translation admission.
+	Room int
+	At   time.Time
+}
+
+// HealthSource is anything that keeps provider health current.
+type HealthSource interface {
+	ASRHealth() Health
+	TranslatorHealth() Health
 }

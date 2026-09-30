@@ -39,7 +39,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -o /out/tlingualctl ./cmd/tlingualctl
 
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+# Debian rather than Alpine: when the GPU is shared with the container
+# (compose.gpu.yaml), the runtime mounts in the driver's nvidia-smi, which
+# needs glibc. Nothing is installed; the CA bundle comes from the build stage.
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
 
 ARG VERSION=development
 ARG REVISION=unknown
@@ -51,14 +54,15 @@ LABEL org.opencontainers.image.title="t-lingual" \
       org.opencontainers.image.source="https://github.com/Tularity/t-lingual" \
       org.opencontainers.image.documentation="https://github.com/Tularity/t-lingual#readme" \
       org.opencontainers.image.vendor="Tularity" \
-      org.opencontainers.image.base.name="docker.io/library/alpine:3.24.1" \
+      org.opencontainers.image.base.name="docker.io/library/debian:bookworm-slim" \
       org.opencontainers.image.version=$VERSION \
       org.opencontainers.image.revision=$REVISION \
       org.opencontainers.image.created=$BUILD_DATE
 
+COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN test -s /etc/ssl/certs/ca-certificates.crt && \
-    addgroup -S -g 10001 tlingual && \
-    adduser -S -D -H -u 10001 -G tlingual tlingual && \
+    groupadd --system --gid 10001 tlingual && \
+    useradd --system --no-create-home --uid 10001 --gid tlingual --shell /usr/sbin/nologin tlingual && \
     mkdir -p /app/data /app/web && \
     chown -R 10001:10001 /app && \
     chmod 0700 /app/data
@@ -81,6 +85,6 @@ EXPOSE 8080
 STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -q -T 3 -O /dev/null http://127.0.0.1:8080/health/live || exit 1
+    CMD ["/app/t-lingual", "healthcheck"]
 
 ENTRYPOINT ["/app/t-lingual"]

@@ -5,22 +5,26 @@ import type { SessionDetailResponse, Segment, LiveServerMessage } from '../../ap
 import { Button, Card, Dialog, EmptyState, Icon, Input, LoadingState, buttonClassName, useToast } from '../../design-system'
 import { Link, useRouter } from '../../app/router'
 import { errorMessage, formatDuration, formatTimestamp } from '../../app/utils'
-import { SegmentedControl, Menu, MenuItem } from '@t-lingual/ui'
+import { useOptionalWorkspaces, usePageWorkspace } from '../../app/workspaces'
+import { MoveSessionDialog } from '../workspaces/WorkspaceDialogs'
+import { SegmentedControl, Menu, MenuCheckboxItem, MenuItem, MenuSeparator } from '@t-lingual/ui'
 import { SharingDialog } from './SharingDialog'
+import { PresenceStack } from './PresenceStack'
 import { RecognitionLanguageMenu } from './RecognitionLanguageMenu'
-import { SessionTransport } from './SessionTransport'
+import { PlaybackBar } from './PlaybackBar'
 import { useSessionAudio } from './useSessionAudio'
 import { LanguageSelect, languageDisplayName } from '../languages'
-import { TranscriptPiPButton } from '../transcript/useTranscriptPiP'
+import { useTranscriptPiP } from '../transcript/useTranscriptPiP'
 import { TranscriptViewport } from '../transcript/TranscriptViewport'
 import { StatusBadge } from './StatusBadge'
 import { mergeTranscript, updateTranslation } from '../live/transcriptState'
+import { mergeGap } from '../live/useLiveInterpretation'
+import { refusalText, useRecordingAdmission } from '../live/useRecordingAdmission'
 import './detail.css'
 
 export function SessionDetailPage({ sessionId }: { sessionId: string }) {
   const {t,locale,formatDate}=useI18n()
 
-  const [transportMode,setTransportMode]=useState<'record'|'playback'>('playback')
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [loadState, setLoadState] = useState<{ sessionId: string; attempt: number; detail: SessionDetailResponse | null; error: string }>(() => ({ sessionId, attempt: 0, detail: null, error: '' }))
   const [shareOpen, setShareOpen] = useState(false)
@@ -44,8 +48,19 @@ export function SessionDetailPage({ sessionId }: { sessionId: string }) {
   const requestGenerationRef = useRef(0); const { push } = useToast(); const { navigate } = useRouter()
   const isCurrentLoad = loadState.sessionId === sessionId && loadState.attempt === loadAttempt
   const detail = isCurrentLoad ? loadState.detail : null
+  // Recording can continue only while recognition can take it.
+  const admission = useRecordingAdmission(sessionId, !!detail && !detail.session.archivedAt && !detail.recording?.active && (detail.access?.permission === 'record' || api.mode === 'mock'))
+  const refusal = admission && !admission.allowed && admission.reason ? refusalText(admission.reason, detail?.access?.isOwner ?? api.mode === 'mock') : null
   const error = isCurrentLoad ? loadState.error : ''
+  // The breadcrumb names the workspace keeping this session — or, for a
+  // session someone shared, says so. It holds through a reload.
+  const known = loadState.sessionId === sessionId ? loadState.detail?.session : undefined
+  usePageWorkspace(known ? known.workspaceId ? { id: known.workspaceId } : { shared: true } : null)
+  const workspaces = useOptionalWorkspaces()
+  const [moveOpen, setMoveOpen] = useState(false)
   const player=useSessionAudio(sessionId,`${detail?.session.status}:${detail?.recording?.active}`)
+  // Picture-in-picture follows the reading window; it lives in the reading options menu.
+  const pip=useTranscriptPiP({segments:readerWindow,title:detail?.session.title??'',sourceLanguage:detail?.session.sourceLanguage??'auto',targetLanguage:detail?.session.targetLanguage??'en'})
   useEffect(() => {
     let active = true
     const generation = requestGenerationRef.current + 1
@@ -73,13 +88,18 @@ export function SessionDetailPage({ sessionId }: { sessionId: string }) {
     events.onmessage = event => {
       let message: LiveServerMessage
       try {message=JSON.parse(event.data) as LiveServerMessage} catch {return}
-      if (message.type !== 'translation' && message.type !== 'speaker' && message.type !== 'snapshot' && message.type !== 'recording' && message.type !== 'stopped') return
+      // New lines belong to the live page; here only lines recognized late,
+      // from audio recognition missed, join the saved transcript in their place.
+      if (message.type !== 'translation' && message.type !== 'speaker' && message.type !== 'source_text' && message.type !== 'snapshot' && message.type !== 'recording' && message.type !== 'stopped' && message.type !== 'presence' && message.type !== 'gap' && !(message.type === 'final' && message.backfill)) return
       if (message.type === 'translation' && message.targetLanguage && message.targetLanguage !== viewerTarget) return
       if (message.type === 'snapshot' && (message.access?.targetLanguage ?? message.session.targetLanguage) !== viewerTarget) return
       setLoadState(current => {
         if (!active || current.sessionId !== sessionId || !current.detail || current.detail.session.targetLanguage !== viewerTarget) return current
         if(message.type==='recording')return {...current,detail:{...current.detail,recording:message.recording,session:{...current.detail.session,status:message.recording.active?'live':current.detail.session.status==='live'?'completed':current.detail.session.status}}}
         if(message.type==='stopped')return {...current,detail:{...current.detail,recording:{active:false},session:{...current.detail.session,status:message.status}}}
+        if(message.type==='presence')return {...current,detail:{...current.detail,presence:message.presence}}
+        if(message.type==='gap')return {...current,detail:{...current.detail,recognitionGaps:mergeGap(current.detail.recognitionGaps ?? [],message.gap)}}
+        if(message.type==='final')return {...current,detail:{...current.detail,segments:mergeTranscript(current.detail.segments,[message.segment])}}
         const currentSegments = current.detail.segments
         const matchingWindow = readerWindowTargetRef.current === viewerTarget ? readerWindowRef.current : []
         const visible = new Map([...matchingWindow, ...currentSegments].map(item => [item.id, item]))
@@ -90,9 +110,12 @@ export function SessionDetailPage({ sessionId }: { sessionId: string }) {
         } else if (message.type === 'speaker') {
           const segment=visible.get(message.segmentId)
           if (segment) updates=[{...segment,speakerId:message.speakerId,speakerLabel:message.speakerLabel}]
+        } else if (message.type === 'source_text') {
+          const segment=visible.get(message.segmentId)
+          if (segment) updates=[{...segment,sourceText:message.sourceText}]
         } else updates=message.segments.filter(segment => visible.has(segment.id))
         if (!updates.length && message.type!=='snapshot') return current
-        return {...current,detail:{...current.detail,...(message.type==='snapshot'?{session:{...current.detail.session,...message.session,targetLanguage:viewerTarget},access:message.access,recording:message.recording}:{}),segments:mergeTranscript(currentSegments,updates)}}
+        return {...current,detail:{...current.detail,...(message.type==='snapshot'?{session:{...current.detail.session,...message.session,targetLanguage:viewerTarget},access:message.access,recording:message.recording,...(message.presence?{presence:message.presence}:{}),...(message.recognitionGaps?{recognitionGaps:message.recognitionGaps}:{})}:{}),segments:mergeTranscript(currentSegments,updates)}}
       })
     }
     let reconciling = false
@@ -208,7 +231,7 @@ export function SessionDetailPage({ sessionId }: { sessionId: string }) {
     } catch (caught) { push({ tone: 'error', title: t("Couldn’t export transcript"), message: errorMessage(caught) }) }
     finally { setExporting(false) }
   }
-  if (error) return <Card className="detail-error"><EmptyState icon="warning" title={t("Session unavailable")} description={error} action={<div className="detail-error__actions"><Link className={buttonClassName()} href="/history">{t("Back to history")}</Link><Button variant="primary" onClick={() => setLoadAttempt((current) => current + 1)}>{t("Try again")}</Button></div>} /></Card>
+  if (error) return <Card className="detail-error"><EmptyState icon="warning" title={t("Session unavailable")} description={error} action={<div className="detail-error__actions"><Link className={buttonClassName()} href="/sessions">{t("Back to your workspace")}</Link><Button variant="primary" onClick={() => setLoadAttempt((current) => current + 1)}>{t("Try again")}</Button></div>} /></Card>
   if (!detail) return <LoadingState fill size={200} label={t("Loading session transcript")} />
   const display = displayChoice ?? (detail.translationConfigured === false ? 'source' : 'parallel')
   const { session, segments } = detail
@@ -220,14 +243,61 @@ export function SessionDetailPage({ sessionId }: { sessionId: string }) {
     catch(caught) {push({tone:'error',title:t("Couldn’t change language"),message:errorMessage(caught)})} finally {setLanguageBusy(false)}
   }
   const elapsed = session.startedAt && session.endedAt ? new Date(session.endedAt).getTime() - new Date(session.startedAt).getTime() : 0
+  const canRename = owner && !session.archivedAt
+  const openRename = () => { setRenameTitle(session.title); setRenameOpen(true) }
+  const empty = segments.length === 0
+  const recordingActive = !!detail.recording?.active
   return <LoadingState loading={false} fill size={200} label={t("Loading session transcript")}><div className="detail-page" data-immersive={immersive || undefined} data-reading-size={largeText ? 'large' : 'standard'}>
-    <header className="detail-header"><div><div className="detail-title"><h1 dir="auto">{session.title}</h1><StatusBadge status={session.status} archivedAt={session.archivedAt} /></div></div><div className="detail-actions">{!canRecord && !session.archivedAt && <Link className={buttonClassName()} href={`/live/${session.id}`}>{t("Watch conversation")}</Link>}{owner && <Button icon={session.archivedAt ? 'play' : 'folder'} loading={archiving} disabled={session.status === 'live'} onClick={() => void changeArchive()}>{session.archivedAt ? t("Unarchive") : t("Archive")}</Button>}{owner && <Button icon="users" onClick={() => setShareOpen(true)}>{t("Share")}</Button>}<div className="detail-secondary-actions">{owner && <Button icon="edit" disabled={!!session.archivedAt} onClick={() => { setRenameTitle(session.title); setRenameOpen(true) }}>{t("Rename")}</Button>}<Button icon="copy" loading={copying} disabled={segments.length === 0} onClick={() => void copyTranscript()}>{t("Copy")}</Button><Button icon="download" loading={exporting} disabled={segments.length === 0} onClick={() => void exportTranscript()}>{t("Export")}</Button>{owner && <a className={buttonClassName()} href={api.audio.bundleUrl(sessionId)} aria-disabled={session.status==='live'||api.mode==='mock'} onClick={event=>{if(session.status==='live'||api.mode==='mock')event.preventDefault()}}>{t('Export session')}</a>}<Button icon="printer" aria-label={t("Print current transcript window")} title={t("Print the current reading window. Export downloads the complete transcript.")} onClick={() => window.print()}>{t("Print")}</Button></div><Menu placement="bottom-end" trigger={<Button className="detail-more" icon="more" iconOnly aria-label={t("Transcript actions")} />}> {owner && <MenuItem disabled={!!session.archivedAt} onSelect={() => { setRenameTitle(session.title); setRenameOpen(true) }}>{t("Rename")}</MenuItem>}<MenuItem disabled={segments.length === 0 || copying} onSelect={() => void copyTranscript()}>{t("Copy transcript")}</MenuItem><MenuItem disabled={segments.length === 0 || exporting} onSelect={() => void exportTranscript()}>{t("Export transcript")}</MenuItem>{owner && <MenuItem disabled={session.status==='live'||api.mode==='mock'} onSelect={()=>{window.location.assign(api.audio.bundleUrl(sessionId))}}>{t('Export session')}</MenuItem>}<MenuItem onSelect={() => window.print()}>{t("Print current window")}</MenuItem></Menu></div></header>
-    {session.archivedAt && <div className="detail-archive-notice" role="status" title={t('Archived {date}',{date:formatDate(session.archivedAt)})}><Icon name="folder" size={16} /><strong>{t("Archived · read only")}</strong>{session.archiveReason === 'inactivity' && <span>{t("After inactivity")}</span>}</div>}
-    <div className="detail-meta"><span className="detail-meta__languages"><RecognitionLanguageMenu value={session.recognitionLanguages?.length?session.recognitionLanguages:[session.sourceLanguage]} disabled={!owner||!!session.archivedAt||session.status==='live'} onSave={async languages=>{const updated=await api.sessions.recognition(sessionId,languages);setLoadState(current=>current.detail?{...current,detail:{...current.detail,session:{...updated,targetLanguage:current.detail.session.targetLanguage}}}:current)}} /><Icon name="arrowRight" size={13} /><LanguageSelect label={t("Your translation")} value={session.targetLanguage} disabled={languageBusy} onChange={value => void changeLanguage(value)} /></span><span><Icon name="history" size={13} />{formatDuration(elapsed)}</span><time dateTime={session.updatedAt} title={t('Created {date}',{date:formatDate(session.createdAt)})}>{t("Updated")}{' '}{formatDate(session.updatedAt, { dateStyle: 'medium' })}</time></div>
-    <div className="detail-toolbar"><div className="detail-search"><Input label={t("Search transcript")} icon="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t("Search the whole conversation…")} /></div><SegmentedControl aria-label={t("Transcript display")} value={display} onChange={value => setDisplay(value as typeof display)} items={[{ value: 'parallel', label: t("Both") }, { value: 'source', label: t("Source") }, { value: 'translation', label: t("Translation") }]} /><div className="reader-actions__tools"><TranscriptPiPButton segments={readerWindow} title={session.title} sourceLanguage={session.sourceLanguage} targetLanguage={session.targetLanguage} /><Button size="sm" variant="ghost" aria-pressed={largeText} onClick={() => setLargeText(value => !value)}>{t("Aa")}{' '}{largeText ? t("Standard text") : t("Larger text")}</Button><Button size="sm" variant="ghost" icon="external" aria-pressed={immersive} onClick={() => setImmersive(value => !value)}>{immersive ? t("Exit focus") : t("Focus view")}</Button></div></div>
-    <section className="detail-reader"><TranscriptViewport key={session.targetLanguage} playback={transportMode==='playback'&&!detail.recording?.active&&player.ready.length?{timeMs:player.positionMs,playing:player.playing,seekToken:player.seekToken}:undefined} onSeekTime={player.ready.length?value=>{setTransportMode('playback');player.seek(value)}:undefined} onWindowChange={captureReaderWindow} sessionId={sessionId} segments={segments} initialHasMore={detail.segmentPage.hasMore} sourceLanguage={session.recognitionLanguages && session.recognitionLanguages.length > 1 ? 'auto' : session.sourceLanguage} targetLanguage={session.targetLanguage} display={display} query={query} emptyTitle={t("No final transcript")} emptyDescription={t("This session has not captured a complete phrase yet.")} /></section>
-    <SessionTransport player={player} mode={transportMode} onModeChange={setTransportMode} recording={detail.recording?.active} recordingPanel={<div className="transcript-record-entry"><p>{t('Continue this conversation with a new recording.')}</p>{!session.archivedAt && canRecord && <Button variant="primary" icon={session.status === 'live' ? 'wave' : 'microphone'} loading={continuing} onClick={() => void continueRecording()}>{session.status === 'live' ? t("Return to live") : t("Continue recording")}</Button>}</div>} />
-    {owner && shareOpen && <SharingDialog sessionId={sessionId} open={shareOpen} onClose={() => setShareOpen(false)} />}
+    {/* The session: its name (click to rename), its state and languages; and
+      * only two actions in view — sharing, and everything else in one menu. */}
+    <header className="detail-header">
+        <div className="detail-title">
+          <h1 dir="auto">{canRename ? <button type="button" className="detail-title__rename" aria-describedby="detail-rename-hint" onClick={openRename}><span>{session.title}</span><Icon name="edit" size={15} /></button> : session.title}</h1>
+          {canRename && <span id="detail-rename-hint" hidden>{t("Rename session")}</span>}
+          <StatusBadge status={session.status} archivedAt={session.archivedAt} />
+        </div>
+        <div className="detail-meta">
+          <span className="detail-meta__languages"><RecognitionLanguageMenu value={session.recognitionLanguages?.length?session.recognitionLanguages:[session.sourceLanguage]} disabled={!owner||!!session.archivedAt||session.status==='live'} onSave={async languages=>{const updated=await api.sessions.recognition(sessionId,languages);setLoadState(current=>current.detail?{...current,detail:{...current.detail,session:{...updated,targetLanguage:current.detail.session.targetLanguage}}}:current)}} /><Icon name="arrowRight" size={13} /><LanguageSelect label={t("Your translation")} value={session.targetLanguage} disabled={languageBusy} onChange={value => void changeLanguage(value)} /></span>
+          {elapsed > 0 && <span><Icon name="clock" size={13} />{formatDuration(elapsed)}</span>}
+          <time dateTime={session.updatedAt} title={t('Created {date}',{date:formatDate(session.createdAt)})}>{t("Updated")}{' '}{formatDate(session.updatedAt, { dateStyle: 'medium' })}</time>
+          {session.archivedAt && <span className="detail-meta__archived" title={t('Archived {date}',{date:formatDate(session.archivedAt)})}><Icon name="folder" size={13} />{t("Archived · read only")}{session.archiveReason === 'inactivity' && <> · {t("After inactivity")}</>}</span>}
+        </div>
+      <div className="detail-actions">
+        {!canRecord && !session.archivedAt && <Link className={buttonClassName()} href={`/live/${session.id}`}>{t("Watch conversation")}</Link>}
+        <PresenceStack sessionId={sessionId} presence={detail.presence} />
+        {owner && <Button icon="users" aria-label={t("Share")} onClick={() => setShareOpen(true)}><span className="detail-actions__label">{t("Share")}</span></Button>}
+        <Menu placement="bottom-end" aria-label={t("More actions")} trigger={<Button icon="more" iconOnly aria-label={t("More actions")} title={t("More actions")} />}>
+          <MenuItem icon={<Icon name="copy" size={16} />} disabled={empty || copying} onSelect={() => void copyTranscript()}>{t("Copy transcript")}</MenuItem>
+          <MenuItem icon={<Icon name="download" size={16} />} disabled={empty || exporting} onSelect={() => void exportTranscript()}>{t("Export transcript")}</MenuItem>
+          {owner && <MenuItem icon={<Icon name="headphones" size={16} />} disabled={session.status==='live'||api.mode==='mock'} onSelect={()=>{window.location.assign(api.audio.bundleUrl(sessionId))}}>{t('Export session')}</MenuItem>}
+          <MenuItem icon={<Icon name="printer" size={16} />} onSelect={() => window.print()}>{t("Print current window")}</MenuItem>
+          {owner && <><MenuSeparator />{workspaces && workspaces.items.length > 1 && <MenuItem icon={<Icon name="arrowRight" size={16} />} disabled={session.status === 'live'} onSelect={() => setMoveOpen(true)}>{t("Move to another workspace")}</MenuItem>}<MenuItem icon={<Icon name={session.archivedAt ? 'play' : 'folder'} size={16} />} disabled={session.status === 'live' || archiving} onSelect={() => void changeArchive()}>{session.archivedAt ? t("Unarchive session") : t("Archive session")}</MenuItem></>}
+        </Menu>
+      </div>
+    </header>
+    {/* The transcript, with what changes how it reads across its top. */}
+    <section className="detail-reader">
+      <div className="detail-tools">
+        <div className="detail-search"><Input label={t("Search transcript")} icon="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t("Search the whole conversation…")} /></div>
+        <SegmentedControl aria-label={t("Transcript display")} value={display} onChange={value => setDisplay(value as typeof display)} items={[{ value: 'parallel', label: t("Both") }, { value: 'source', label: t("Source") }, { value: 'translation', label: t("Translation") }]} />
+        <div className="detail-tools__end">
+          {immersive && <Button size="sm" variant="ghost" icon="close" onClick={() => setImmersive(false)}>{t("Exit focus")}</Button>}
+          <Menu placement="bottom-end" aria-label={t("Reading options")} trigger={<Button size="sm" variant="ghost" icon="sliders" iconOnly aria-label={t("Reading options")} title={t("Reading options")} />}>
+            <MenuCheckboxItem checked={largeText} onCheckedChange={setLargeText}>{t("Larger text")}</MenuCheckboxItem>
+            <MenuCheckboxItem checked={immersive} onCheckedChange={setImmersive}>{t("Focus view")}</MenuCheckboxItem>
+            <MenuSeparator />
+            <MenuItem icon={<Icon name="external" size={16} />} disabled={!pip.supported} onSelect={pip.toggle}>{pip.isOpen ? t('Close picture-in-picture') : t('Picture-in-picture')}</MenuItem>
+          </Menu>
+        </div>
+        {pip.error && <p className="detail-tools__note" role="alert">{t(pip.error)}</p>}
+      </div>
+      <TranscriptViewport bare key={session.targetLanguage} playback={!recordingActive&&player.ready.length?{timeMs:player.positionMs,playing:player.playing,seekToken:player.seekToken}:undefined} onSeekTime={!recordingActive&&player.ready.length?value=>player.seek(value):undefined} onWindowChange={captureReaderWindow} sessionId={sessionId} segments={segments} gaps={detail.recognitionGaps} initialHasMore={detail.segmentPage.hasMore} sourceLanguage={session.recognitionLanguages && session.recognitionLanguages.length > 1 ? 'auto' : session.sourceLanguage} targetLanguage={session.targetLanguage} display={display} query={query} emptyTitle={t("No final transcript")} emptyDescription={t("This session has not captured a complete phrase yet.")} />
+    </section>
+    {/* Its audio, and the way to carry the conversation on. */}
+    <PlaybackBar player={player} recording={recordingActive} action={!session.archivedAt && canRecord && <Button variant={recordingActive ? 'primary' : 'secondary'} icon={session.status === 'live' ? 'wave' : 'microphone'} loading={continuing} disabled={!recordingActive && !!refusal} title={!recordingActive && refusal ? t(refusal.notice) : undefined} onClick={() => void continueRecording()}>{session.status === 'live' ? t("Return to live") : t("Continue recording")}</Button>} />
+    {pip.portal}
+    {owner && workspaces && <MoveSessionDialog session={moveOpen ? session : null} onClose={() => setMoveOpen(false)} onMoved={(moved) => setLoadState((current) => current.detail ? { ...current, detail: { ...current.detail, session: { ...current.detail.session, workspaceId: moved.workspaceId } } } : current)} />}
+    {owner && <SharingDialog sessionId={sessionId} open={shareOpen} onClose={() => setShareOpen(false)} />}
     <Dialog open={renameOpen && !session.archivedAt} onClose={() => !renaming && setRenameOpen(false)} title={t("Rename session")} footer={<><Button onClick={() => setRenameOpen(false)} disabled={renaming}>{t("Cancel")}</Button><Button type="submit" form="rename-session" variant="primary" loading={renaming} disabled={!renameTitle.trim()}>{t("Save name")}</Button></>}><form id="rename-session" onSubmit={(event) => void rename(event)}><Input autoFocus label={t("Session title")} maxLength={120} value={renameTitle} onChange={(event) => setRenameTitle(event.target.value)} /></form></Dialog>
   </div></LoadingState>
 }

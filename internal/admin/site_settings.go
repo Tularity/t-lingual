@@ -30,7 +30,8 @@ func (s *Service) UpdateSiteSettings(ctx context.Context, web WebAuthority, valu
 	}
 	audit, err := s.newAuditEvent(authority.actorPointer(), "site_settings.update", "site_settings", "1",
 		map[string]any{"codeAttemptsPerMinute": value.CodeAttemptsPerMinute,
-			"markdownBytes": len(value.RegistrationHelpMarkdown)}, authority.checkedAt)
+			"draftTranslationIntervalMs": value.DraftTranslationIntervalMS,
+			"markdownBytes":              len(value.RegistrationHelpMarkdown)}, authority.checkedAt)
 	if err != nil {
 		return store.SiteSettings{}, err
 	}

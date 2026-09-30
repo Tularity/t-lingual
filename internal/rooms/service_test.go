@@ -186,6 +186,11 @@ func roomFixture(t *testing.T, translator translate.Provider) (*Service, *store.
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Draft pacing has its own test; elsewhere a changed line is asked for at once.
+	svc.SetDraftTranslationInterval(0)
+	// Going on with a run after its connection drops has its own tests;
+	// elsewhere a run ends with its connection.
+	svc.reattachGrace = 0
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -501,7 +506,7 @@ func TestRecordLeaseDeniesStealAndOwnerCanTakeOverWithoutStaleRelease(t *testing
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	holder := &recordLease{id: 1, viewer: viewers[1], access: guestAccess, ctx: ctx, cancel: cancel, done: make(chan struct{})}
-	if _, err := svc.reserveRecorder(holder, false); err != nil {
+	if _, err := svc.reserveRecorder(holder, false, false, 1); err != nil {
 		t.Fatal(err)
 	}
 	response := httptest.NewRecorder()
@@ -519,7 +524,7 @@ func TestRecordLeaseDeniesStealAndOwnerCanTakeOverWithoutStaleRelease(t *testing
 	defer takeoverCancel(nil)
 	owner := &recordLease{id: 2, viewer: viewers[0], access: ownerAccess, ctx: takeoverCtx,
 		cancel: takeoverCancel, done: make(chan struct{})}
-	old, err := svc.reserveRecorder(owner, true)
+	old, err := svc.reserveRecorder(owner, true, false, 1)
 	if err != nil || old != holder {
 		t.Fatalf("takeover = %v, %v", old, err)
 	}
@@ -705,7 +710,7 @@ func TestBrowserRevocationCancelsRecorderLease(t *testing.T) {
 	defer cancel(nil)
 	current := &recordLease{id: 3, viewer: viewers[0], access: access, ctx: ctx,
 		cancel: cancel, done: make(chan struct{})}
-	if _, err := svc.reserveRecorder(current, false); err != nil {
+	if _, err := svc.reserveRecorder(current, false, false, 1); err != nil {
 		t.Fatal(err)
 	}
 	svc.RevokeBrowserSession(viewers[0].BrowserSessionID)
@@ -882,7 +887,8 @@ func TestSilentPCMKeepsLeaseButPingOnlyExpires(t *testing.T) {
 		cancel()
 		time.Sleep(40 * time.Millisecond)
 	}
-	if !svc.State(session.ID).Active || stream.audio.Load() != 6 {
+	// Too little audio for a recognition chunk: it waits to be sent with the next.
+	if !svc.State(session.ID).Active || stream.audio.Load() != 0 {
 		t.Fatalf("quiet meeting was interrupted: active=%t packets=%d", svc.State(session.ID).Active, stream.audio.Load())
 	}
 	for range 3 {
@@ -918,7 +924,7 @@ func TestOnlyOwnerCanStopAnotherRecorder(t *testing.T) {
 	defer cancel(nil)
 	current := &recordLease{id: 4, viewer: viewers[1], access: access, ctx: ctx,
 		cancel: cancel, done: make(chan struct{})}
-	if _, err := svc.reserveRecorder(current, false); err != nil {
+	if _, err := svc.reserveRecorder(current, false, false, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.StopRecorder(context.Background(), viewers[1], session.ID); !errors.Is(err, store.ErrForbidden) {

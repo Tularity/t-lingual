@@ -33,6 +33,18 @@ func TestAuthorizationScopesAreRestrictedAndCanonical(t *testing.T) {
 		{name: "explicit invitation expiry", scope: "admin:invitation:create:720", want: "admin:invitation:create:720", valid: true},
 		{name: "invitation target", scope: "admin:invitation:revoke:inv_abc123", want: "admin:invitation:revoke:inv_abc123", valid: true},
 		{name: "user payload", scope: "admin:user:update:usr_abc123:admin:disabled", want: "admin:user:update:usr_abc123:admin:disabled", valid: true},
+		{name: "account limits digest", scope: "admin:user:limits:usr_abc123:" + strings.Repeat("b", 64), want: "admin:user:limits:usr_abc123:" + strings.Repeat("b", 64), valid: true},
+		{name: "account settings digest", scope: "admin:user:settings:usr_abc123:" + strings.Repeat("c", 64), want: "admin:user:settings:usr_abc123:" + strings.Repeat("c", 64), valid: true},
+		{name: "account passkey removal", scope: "admin:user:passkey:usr_abc123:" + strings.Repeat("d", 64), want: "admin:user:passkey:usr_abc123:" + strings.Repeat("d", 64), valid: true},
+		{name: "account browser sign-out", scope: "admin:user:session:usr_abc123:" + strings.Repeat("e", 64), want: "admin:user:session:usr_abc123:" + strings.Repeat("e", 64), valid: true},
+		{name: "account deletion", scope: "admin:user:delete:usr_abc123", want: "admin:user:delete:usr_abc123", valid: true},
+		{name: "account deletion of a non-user", scope: "admin:user:delete:inv_abc123"},
+		{name: "default limits digest", scope: "admin:limits:update:" + strings.Repeat("f", 64), want: "admin:limits:update:" + strings.Repeat("f", 64), valid: true},
+		{name: "default limits without a digest", scope: "admin:limits:update:everything"},
+		{name: "account removal of an unknown kind", scope: "admin:user:everything:usr_abc123:" + strings.Repeat("d", 64)},
+		{name: "account change without digest", scope: "admin:user:profile:usr_abc123:nothex"},
+		{name: "account change of a non-user", scope: "admin:user:limits:inv_abc123:" + strings.Repeat("b", 64)},
+		{name: "unknown account change", scope: "admin:user:delete:usr_abc123:" + strings.Repeat("b", 64)},
 		{name: "leading zero hours", scope: "admin:invitation:create:02"},
 		{name: "excessive hours", scope: "admin:invitation:create:721"},
 		{name: "foreign operation", scope: "admin:audit:delete:all"},
@@ -65,11 +77,12 @@ func TestAuthorizationScopesAreRestrictedAndCanonical(t *testing.T) {
 func TestSiteSettingsScopeMatchesCompactBrowserJSONIncludingMarkdownSymbols(t *testing.T) {
 	markdown := "> Ask <admin> & use \"code\"\nNext line."
 	// This is the exact UTF-8 output of JSON.stringify({registrationHelpMarkdown,
-	// codeAttemptsPerMinute}) with that insertion order and no extra spaces.
-	compact := `{"registrationHelpMarkdown":"> Ask <admin> & use \"code\"\nNext line.","codeAttemptsPerMinute":3}`
+	// codeAttemptsPerMinute, draftTranslationIntervalMs}) with that insertion
+	// order and no extra spaces.
+	compact := `{"registrationHelpMarkdown":"> Ask <admin> & use \"code\"\nNext line.","codeAttemptsPerMinute":3,"draftTranslationIntervalMs":1000}`
 	hash := sha256.Sum256([]byte(compact))
 	want := fmt.Sprintf("admin:site-settings:update:%x", hash)
-	got, err := AdminSiteSettingsAuthorizationScope(markdown, 3)
+	got, err := AdminSiteSettingsAuthorizationScope(markdown, 3, 1000)
 	if err != nil || got != want {
 		t.Fatalf("site settings scope = %q %v, want %q", got, err, want)
 	}

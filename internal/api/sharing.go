@@ -83,14 +83,33 @@ func accessJSON(access domain.SessionAccess) map[string]any {
 func sessionJSON(access domain.SessionAccess) map[string]any {
 	session := access.Session
 	session.TargetLanguage = access.TargetLanguage
-	return map[string]any{"id": session.ID, "title": session.Title, "sourceLanguage": session.SourceLanguage, "targetLanguage": session.TargetLanguage, "status": session.Status, "createdAt": session.CreatedAt, "updatedAt": session.UpdatedAt, "startedAt": session.StartedAt, "endedAt": session.EndedAt, "archivedAt": session.ArchivedAt, "archiveReason": session.ArchiveReason, "recognitionLanguages": session.RecognitionLanguages, "diarization": session.Diarization, "isOwner": access.IsOwner, "permission": access.Permission}
+	result := map[string]any{"id": session.ID, "title": session.Title, "sourceLanguage": session.SourceLanguage, "targetLanguage": session.TargetLanguage, "status": session.Status, "createdAt": session.CreatedAt, "updatedAt": session.UpdatedAt, "startedAt": session.StartedAt, "endedAt": session.EndedAt, "archivedAt": session.ArchivedAt, "archiveReason": session.ArchiveReason, "recognitionLanguages": session.RecognitionLanguages, "diarization": session.Diarization, "isOwner": access.IsOwner, "permission": access.Permission}
+	// Where a session is kept is the owner's own organisation.
+	if access.IsOwner {
+		result["workspaceId"] = session.WorkspaceID
+	}
+	return result
 }
+
+// sharedOnly lists only what others have shared with the viewer.
+var sharedOnly = store.AccessibleSessionFilter{SharedOnly: true}
+
 func (a *API) listViewedSessions(w http.ResponseWriter, r *http.Request, viewer domain.Viewer) error {
 	limit, offset, err := pagination(r, 50)
 	if err != nil {
 		return err
 	}
-	items, err := a.sharing.ListAccessibleSessions(r.Context(), viewer, limit, offset)
+	var filter store.AccessibleSessionFilter
+	query := r.URL.Query()
+	if workspaceID := strings.TrimSpace(query.Get("workspace")); workspaceID != "" {
+		if viewer.UserID == "" {
+			return store.ErrNotFound
+		}
+		filter.WorkspaceID = workspaceID
+	} else if query.Get("shared") == "true" {
+		filter.SharedOnly = true
+	}
+	items, err := a.sharing.ListAccessibleSessionsIn(r.Context(), viewer, filter, limit, offset)
 	if err != nil {
 		return err
 	}
@@ -111,7 +130,11 @@ func (a *API) getViewedSession(w http.ResponseWriter, r *http.Request, viewer do
 	if err != nil {
 		return err
 	}
-	webapi.WriteJSON(w, 200, map[string]any{"session": sessionJSON(access), "segments": page.Items, "segmentPage": map[string]any{"hasMore": page.HasMore, "nextAfter": page.NextAfter, "limit": 40}, "access": accessJSON(access), "recording": a.rooms.State(id, viewer), "translationConfigured": a.providers != nil && a.providers.Snapshot().Translator != nil})
+	gaps, err := a.rooms.Gaps(r.Context(), access)
+	if err != nil {
+		return err
+	}
+	webapi.WriteJSON(w, 200, map[string]any{"session": sessionJSON(access), "segments": page.Items, "segmentPage": map[string]any{"hasMore": page.HasMore, "nextAfter": page.NextAfter, "limit": 40}, "access": accessJSON(access), "recording": a.rooms.State(id, viewer), "presence": a.rooms.Presence(id, access.Viewer), "recognitionGaps": gaps, "translationConfigured": a.providers != nil && a.providers.Snapshot().Translator != nil})
 	return nil
 }
 func (a *API) viewedSegments(w http.ResponseWriter, r *http.Request, viewer domain.Viewer) error {
@@ -180,7 +203,20 @@ func (a *API) shareJSON(r *http.Request, owner string, item domain.SessionShare)
 		result["userId"] = *item.RecipientUserID
 		if user, err := a.store.GetUserByID(r.Context(), *item.RecipientUserID); err == nil {
 			result["displayName"] = user.DisplayName
+			result["avatarVersion"] = user.AvatarVersion
 		}
+	}
+	if item.Kind == domain.ShareLink {
+		result["audience"] = item.Audience
+		members, err := a.sharing.Members(r.Context(), owner, item.SessionID, item.ID)
+		if err != nil {
+			return nil, err
+		}
+		people := make([]map[string]any, 0, len(members))
+		for _, member := range members {
+			people = append(people, personJSON(member))
+		}
+		result["members"] = people
 	}
 	if item.Kind == domain.ShareLink && item.RevokedAt == nil && (item.ExpiresAt == nil || item.ExpiresAt.After(time.Now())) {
 		token, err := a.sharing.LinkToken(r.Context(), owner, item.SessionID, item.ID)
@@ -207,9 +243,16 @@ func (a *API) listShares(w http.ResponseWriter, r *http.Request, current identit
 	webapi.WriteJSON(w, 200, map[string]any{"items": result})
 	return nil
 }
+
+// personJSON is how one person is shown to another: a name and a picture.
+func personJSON(user domain.User) map[string]any {
+	return map[string]any{"id": user.ID, "username": user.Username, "displayName": user.DisplayName, "avatarVersion": user.AvatarVersion}
+}
+
 func (a *API) createShare(w http.ResponseWriter, r *http.Request, current identity) error {
 	var input struct {
 		Type       domain.ShareKind       `json:"type"`
+		Audience   domain.ShareAudience   `json:"audience"`
 		UserID     string                 `json:"userId"`
 		Permission domain.SharePermission `json:"permission"`
 		ExpiresAt  *time.Time             `json:"expiresAt"`
@@ -217,7 +260,7 @@ func (a *API) createShare(w http.ResponseWriter, r *http.Request, current identi
 	if err := webapi.DecodeJSON(w, r, 4096, &input); err != nil {
 		return err
 	}
-	created, err := a.sharing.Create(r.Context(), current.User.ID, r.PathValue("sessionID"), sharing.CreateInput{Kind: input.Type, RecipientUserID: input.UserID, Permission: input.Permission, ExpiresAt: input.ExpiresAt})
+	created, err := a.sharing.Create(r.Context(), current.User.ID, r.PathValue("sessionID"), sharing.CreateInput{Kind: input.Type, Audience: input.Audience, RecipientUserID: input.UserID, Permission: input.Permission, ExpiresAt: input.ExpiresAt})
 	if err != nil {
 		return err
 	}
@@ -259,9 +302,9 @@ func (a *API) shareRecipients(w http.ResponseWriter, r *http.Request, current id
 	if err != nil {
 		return err
 	}
-	result := make([]map[string]string, 0, len(users))
+	result := make([]map[string]any, 0, len(users))
 	for _, user := range users {
-		result = append(result, map[string]string{"id": user.ID, "username": user.Username, "displayName": user.DisplayName})
+		result = append(result, personJSON(user))
 	}
 	webapi.WriteJSON(w, 200, map[string]any{"items": result})
 	return nil
@@ -289,5 +332,21 @@ func (a *API) redeemShare(w http.ResponseWriter, r *http.Request) error {
 	}
 	http.SetCookie(w, cookie)
 	webapi.WriteJSON(w, 200, map[string]string{"sessionId": result.Guest.SessionID})
+	return nil
+}
+
+// joinShare lets the signed-in caller in through a link as themselves.
+func (a *API) joinShare(w http.ResponseWriter, r *http.Request, current identity) error {
+	var input struct {
+		Token string `json:"token"`
+	}
+	if err := webapi.DecodeJSON(w, r, 2048, &input); err != nil {
+		return err
+	}
+	sessionID, err := a.sharing.Join(r.Context(), current.User.ID, input.Token)
+	if err != nil {
+		return err
+	}
+	webapi.WriteJSON(w, 200, map[string]string{"sessionId": sessionID})
 	return nil
 }

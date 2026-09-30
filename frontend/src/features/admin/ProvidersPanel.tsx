@@ -70,7 +70,7 @@ export function ProvidersPanel() {
   if (error || !saved) return <EmptyState icon="warning" title={t("Provider endpoints unavailable")} description={error || t('Try loading the configuration again.')} action={<Button onClick={() => void reload()}>{t("Try again")}</Button>} />
 
   return <LoadingState loading={false} label={t("Loading provider endpoints")}><section className="providers-panel" aria-labelledby="providers-title">
-    <div className="providers-panel__heading"><div><h2 id="providers-title">{t("Provider endpoints")}</h2><p>{t("Changes apply to new recordings. Existing recordings keep their selected providers.")}</p></div><Icon name="shield" size={22} aria-hidden="true" /></div>
+    <div className="providers-panel__heading"><div><h2 id="providers-title">{t("Provider endpoints")}</h2><p>{t("Changes apply to new recordings. Existing recordings keep their selected providers.")}</p></div></div>
     <form className="providers-panel__form" onSubmit={(event) => void submit(event)} aria-busy={saving}>
       <div className="providers-panel__row">
         <div className="providers-panel__identity"><span className="providers-panel__mark"><Icon name="wave" size={19} /></span><div><h3>{t("Speech recognition")}</h3><p>{t("ASR service endpoint")}</p></div></div>

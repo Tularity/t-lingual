@@ -1,0 +1,52 @@
+/* A person in a list, as a button that opens them. */
+.admin-user--button{width:100%;padding:0;border:0;color:inherit;background:none;font:inherit;text-align:start;cursor:pointer}
+.admin-user--button:focus-visible{border-radius:4px;outline:var(--tl-focus-width) solid var(--tl-focus-ring);outline-offset:var(--tl-focus-offset)}
+.admin-user--button>div{flex:1}
+.admin-user__open{flex:none;color:var(--tl-text-muted);opacity:0;transition:opacity var(--tl-duration-sm) var(--tl-ease-out)}
+tr:hover .admin-user__open,.admin-user--button:focus-visible .admin-user__open{opacity:1}
+
+/* The side panel an administrator opens a person in. */
+.admin-user-drawer .tl-drawer__header{padding-bottom:0}
+.admin-user-drawer .tl-drawer__heading{display:grid;gap:14px}
+.admin-drawer__identity{display:flex;align-items:center;gap:14px;min-width:0}
+.admin-drawer__identity>div{display:grid;min-width:0;gap:2px}
+.admin-drawer__badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+.admin-drawer__panel{display:grid;min-width:0;padding-top:14px}
+.admin-drawer__section{display:grid;gap:14px;min-width:0}
+.admin-drawer__section h3{margin:6px 0 0;color:var(--tl-text-secondary);font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.admin-drawer__lead{margin:0;color:var(--tl-text-secondary);font-size:12px;line-height:1.5}
+.admin-drawer__rows{display:grid;border:1px solid var(--tl-divider);border-radius:7px;background:var(--tl-surface)}
+.admin-drawer__row{display:flex;align-items:center;justify-content:space-between;gap:12px 18px;padding:13px 15px;border-bottom:1px solid var(--tl-divider)}
+.admin-drawer__row:last-child{border-bottom:0}
+.admin-drawer__row>div:first-child{display:grid;min-width:0;gap:3px}
+.admin-drawer__row strong{font-size:13px}
+.admin-drawer__row p{margin:0;color:var(--tl-text-muted);font-size:11px;line-height:1.4}
+.admin-drawer__row--field{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px)}
+.admin-drawer__row--field .tl-field__label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;border:0;clip:rect(0,0,0,0);white-space:nowrap}
+.admin-drawer__actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:9px}
+.admin-drawer__note{display:flex;align-items:center;gap:7px;margin:0;color:var(--tl-text-muted);font-size:11px}
+@media(max-width:760px){.admin-drawer__row--field{grid-template-columns:minmax(0,1fr)}}
+.admin-drawer__row--stack{display:grid;grid-template-columns:minmax(0,1fr)}
+.admin-drawer__count{margin-inline-start:4px;color:var(--tl-text-muted);font-weight:500;letter-spacing:0}
+.admin-drawer__link{padding:0;border:0;color:var(--tl-text-brand);background:none;font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.admin-drawer__link:focus-visible{border-radius:3px;outline:var(--tl-focus-width) solid var(--tl-focus-ring);outline-offset:var(--tl-focus-offset)}
+
+/* A limit that follows the default: the default greyed in the field, and said so beside it. */
+.limit-suffix{display:inline-flex;align-items:center;gap:6px;color:var(--tl-text-muted);font-size:12px;white-space:nowrap}
+.limit-suffix__default{padding:1px 6px;border-radius:999px;color:var(--tl-text-secondary);background:var(--tl-surface-sunken);font-size:10.5px;font-weight:600}
+
+/* How someone signs in: a one-time code, their passkeys and their browsers. */
+.signin-code{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.signin-list{margin:0;padding:0;list-style:none}
+.signin-list .admin-drawer__row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center}
+.signin-list__icon{display:grid;width:30px;height:30px;place-items:center;border-radius:6px;color:var(--tl-text-secondary);background:var(--tl-surface-sunken)}
+.signin-list strong{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.signin-list__flag{padding:1px 6px;border-radius:999px;color:var(--tl-danger-fg);background:var(--tl-danger-bg);font-size:10.5px;font-weight:600}
+.signin-list__flag--here{color:var(--tl-text-brand);background:var(--tl-accent-subtle)}
+.admin-drawer__rows--danger{border-color:var(--tl-danger-border)}
+
+/* Deleting an account: what goes with it, then the username to go on. */
+.delete-account{display:grid;gap:14px}
+.delete-account__list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.delete-account__list li{display:flex;align-items:flex-start;gap:9px;font-size:13px;line-height:1.45}
+.delete-account__list svg{flex:none;margin-top:2px;color:var(--tl-danger-fg)}

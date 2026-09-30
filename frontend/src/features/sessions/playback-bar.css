@@ -1,0 +1,29 @@
+/* One bar for a saved conversation's audio: the controls on the left, the
+ * timeline taking whatever room there is, and the way to go on at the end. */
+.playback-bar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;min-height:54px;padding:8px 10px 8px 12px;border:1px solid var(--tl-border);border-radius:10px;background:var(--tl-surface)}
+.playback-bar>audio{display:none}
+.playback-bar__main,.playback-bar__options{display:flex;flex:none;align-items:center;gap:4px}
+.playback-bar__main>.tl-button{--_px:7px}
+.playback-bar__play{--_h:36px;border-radius:50%}
+.playback-bar__timeline{display:flex;flex:1;min-width:200px;align-items:center;gap:10px}
+.playback-bar__timeline>time{min-width:36px;color:var(--tl-text-secondary);font:11px var(--font-mono);font-variant-numeric:tabular-nums}
+.playback-bar__timeline>time:last-child{text-align:right}
+.playback-bar__timeline>input{flex:1;min-width:0;height:20px;accent-color:var(--tl-accent);cursor:pointer}
+.playback-bar__speed{width:74px}
+.playback-bar__volume{display:flex;align-items:center;gap:6px;color:var(--tl-text-muted)}
+.playback-bar__volume input{width:76px;accent-color:var(--tl-accent)}
+.playback-bar__note{display:flex;flex:1;align-items:center;gap:8px;margin:0;padding-left:4px;color:var(--tl-text-muted);font-size:12px}
+.playback-bar__live{width:8px;height:8px;border-radius:50%;background:var(--tl-danger-solid);box-shadow:0 0 0 4px color-mix(in oklab,var(--tl-danger-solid) 18%,transparent);animation:playback-bar-live 1.6s var(--tl-ease-in-out) infinite}
+@keyframes playback-bar-live{50%{opacity:.45}}
+.playback-bar__action{display:flex;flex:none;margin-left:auto;padding-left:14px;border-left:1px solid var(--tl-divider)}
+.playback-bar:not([data-audio]) .playback-bar__action{border:0;padding-left:0}
+.playback-bar__error{flex-basis:100%;margin:0;color:var(--tl-danger-fg);font-size:12px}
+.playback-bar__error button{border:0;color:inherit;background:transparent;font:inherit;text-decoration:underline;cursor:pointer}
+@media(max-width:700px){
+  .playback-bar{gap:6px 8px;padding:8px}
+  .playback-bar__timeline{order:-1;flex-basis:100%}
+  .playback-bar__volume{display:none}
+  .playback-bar__action{padding-left:0;border:0}
+}
+/* On a phone the timeline and a tap on a phrase's time do the seeking. */
+@media(max-width:480px){.playback-bar__main>.tl-button:not(.playback-bar__play){display:none}}

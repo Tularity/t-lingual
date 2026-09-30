@@ -45,6 +45,14 @@ func (a *API) createSession(response http.ResponseWriter, request *http.Request,
 	if err := a.rateLimitSessionCreate(response, current.User.ID); err != nil {
 		return err
 	}
+	// A new session is refused once the account's storage is full, as a
+	// recording into any of its sessions is.
+	if full, err := a.storageFull(request.Context(), current.User.ID); err != nil {
+		return err
+	} else if full {
+		return &webapi.Error{Status: http.StatusConflict, Code: "STORAGE_FULL",
+			Message: "Your storage is full. Delete sessions you no longer need to create new ones."}
+	}
 	created, err := a.workspace.Create(request.Context(), current.User.ID, input)
 	if err != nil {
 		return err

@@ -13,12 +13,16 @@ vi.mock('../../api/client', () => ({
     mode: 'http',
     sessions: { get: apiMocks.get, segments: apiMocks.segments, language: apiMocks.language },
     settings: { get: apiMocks.getSettings },
-    liveSocketUrl: (sessionId: string) => `ws://local.test/${sessionId}`,
+    liveSocketUrl: (sessionId: string, takeover = false, resume = false) => `ws://local.test/${sessionId}${takeover ? '?takeover=true' : resume ? '?resume=true' : ''}`,
     eventsUrl: (sessionId: string) => `http://local.test/${sessionId}/events`,
   },
 }))
 
-import { ensureAudioContextRunning, makeLiveHello, useLiveInterpretation } from './useLiveInterpretation'
+import { ensureAudioContextRunning, liveTiming, makeLiveHello, useLiveInterpretation } from './useLiveInterpretation'
+import { toPcm16 } from './audioCapture'
+
+/** The samples of a frame as sent: 16-bit. */
+const samples16 = (frame: unknown) => [...new Int16Array(frame as ArrayBuffer)]
 import { AUTH_SESSION_INVALID_EVENT, type AuthSessionInvalidDetail } from '../../api/sessionInvalid'
 
 class FakeTrack {
@@ -140,9 +144,9 @@ describe('live audio handshake', () => {
     apiMocks.language.mockReset().mockResolvedValue({ viewerId: 'user:test', displayName: 'Test', isOwner: true, permission: 'record', targetLanguage: 'ja' })
   })
 
-  it('reports raw native Float32 mono audio', () => {
+  it('reports native-rate 16-bit mono audio', () => {
     expect(makeLiveHello(48_000)).toEqual({
-      type: 'start', audio: { encoding: 'pcm32f', sampleRate: 48_000, channels: 1 },
+      type: 'start', audio: { encoding: 'pcm16', sampleRate: 48_000, channels: 1 },
     })
   })
 
@@ -304,28 +308,55 @@ describe('live audio handshake', () => {
     expect(result.current.error).toContain('could not be saved')
     expect(FakeSocket.instances[0]?.send).not.toHaveBeenCalled()
   })
-  it('uses the persisted server outcome when stopping during a disconnected reconnect', async () => {
+  it('finishes sending what was kept once the connection is back after a stop while it was down', async () => {
     installLivePlatform()
-    apiMocks.get.mockResolvedValueOnce(sessionDetail()).mockResolvedValueOnce(sessionDetail()).mockResolvedValueOnce(sessionDetail('failed'))
     const { result } = renderHook(() => useLiveInterpretation('ses_1'))
     await waitFor(() => expect(result.current.session).not.toBeNull())
     await act(async () => result.current.start())
-    const socket = FakeSocket.instances[0]
-    await act(async () => { socket?.open(); socket?.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100 }) })
-    expect(result.current.state).toBe('live')
+    const first = FakeSocket.instances[0]!
+    const worklet = FakeWorkletNode.instances[0]!
+    await act(async () => { first.open(); first.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100, offsetMs: 0 }) })
+    const sent = new Float32Array(48).fill(0.1).buffer
+    act(() => worklet.port.onmessage?.(new MessageEvent('message', { data: sent })))
+    expect(samples16(first.send.mock.calls.at(-1)?.[0])).toEqual(samples16(toPcm16(sent)))
 
-    await act(async () => {
-      if (socket) socket.readyState = FakeSocket.CLOSED
-      socket?.onclose?.(new CloseEvent('close', { code: 1006 }))
-    })
+    await act(async () => { first.readyState = FakeSocket.CLOSED; first.onclose?.(new CloseEvent('close', { code: 1006 })) })
     expect(result.current.state).toBe('reconnecting')
+    const kept = new Float32Array(48).fill(0.2).buffer
+    act(() => worklet.port.onmessage?.(new MessageEvent('message', { data: kept })))
 
     await act(async () => result.current.stop())
+    expect(result.current.state).toBe('stopping')
+    const second = FakeSocket.instances[1]!
+    expect(second.url).toContain('resume=true')
+    // The server saved the first frame (1 ms at 48 kHz): the kept one follows, then the end.
+    await act(async () => { second.open(); second.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_2', chunkMs: 100, offsetMs: 1 }) })
+    const payloads = second.send.mock.calls.map(([payload]) => payload)
+    expect(payloads.slice(1, -1).map(samples16)).toEqual([samples16(toPcm16(kept))])
+    expect(JSON.parse(String(payloads.at(-1)))).toEqual({ type: 'end' })
+    await act(async () => second.message({ type: 'stopped', status: 'completed' }))
+    expect(result.current.state).toBe('ended')
+  })
 
-    expect(apiMocks.get).toHaveBeenCalledTimes(3)
-    expect(result.current.session?.status).toBe('failed')
-    expect(result.current.state).toBe('error')
-    expect(result.current.error).toContain('recorded by the server')
+  it('reports what the server saved when the connection does not come back after a stop', async () => {
+    installLivePlatform()
+    const grace = liveTiming.stopGraceMs
+    liveTiming.stopGraceMs = 30
+    try {
+      apiMocks.get.mockResolvedValueOnce(sessionDetail()).mockResolvedValueOnce(sessionDetail()).mockResolvedValueOnce(sessionDetail('failed'))
+      const { result } = renderHook(() => useLiveInterpretation('ses_1'))
+      await waitFor(() => expect(result.current.session).not.toBeNull())
+      await act(async () => result.current.start())
+      const socket = FakeSocket.instances[0]!
+      const worklet = FakeWorkletNode.instances[0]!
+      await act(async () => { socket.open(); socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100, offsetMs: 0 }) })
+      await act(async () => { socket.readyState = FakeSocket.CLOSED; socket.onclose?.(new CloseEvent('close', { code: 1006 })) })
+      act(() => worklet.port.onmessage?.(new MessageEvent('message', { data: new Float32Array(480).buffer })))
+      await act(async () => result.current.stop())
+      await waitFor(() => expect(result.current.state).toBe('error'))
+      expect(result.current.session?.status).toBe('failed')
+      expect(result.current.error).toContain('couldn’t be saved')
+    } finally { liveTiming.stopGraceMs = grace }
   })
 
   it('keeps a server-stopped session terminal when the socket closes afterwards', async () => {
@@ -383,12 +414,12 @@ describe('live audio handshake', () => {
     act(() => worklet.port.onmessage?.(new MessageEvent('message', { data: second })))
     expect(socket.send).toHaveBeenCalledTimes(1)
     await act(async () => { socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_a', chunkMs: 100 }); await Promise.resolve() })
-    expect(socket.send.mock.calls.slice(1).map(([frame]) => frame)).toEqual([first, second])
+    expect(socket.send.mock.calls.slice(1).map(([frame]) => samples16(frame))).toEqual([[0, 0, 0], samples16(toPcm16(second))])
     act(() => result.current.togglePause())
     act(() => worklet.port.onmessage?.(new MessageEvent('message', { data: second })))
     const pausedFrame = socket.send.mock.calls.at(-1)?.[0] as ArrayBuffer
-    expect(pausedFrame.byteLength).toBe(second.byteLength)
-    expect([...new Float32Array(pausedFrame)]).toEqual([0, 0])
+    expect(pausedFrame.byteLength).toBe(second.byteLength / 2)
+    expect(samples16(pausedFrame)).toEqual([0, 0])
   })
 
   it('flushes the worklet tail to the socket before sending end', async () => {
@@ -410,36 +441,134 @@ describe('live audio handshake', () => {
     await act(async () => result.current.stop())
     expect(worklet.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'flush' }))
     const sent = socket.send.mock.calls.map(([payload]) => payload)
-    expect(sent.at(-2)).toBe(tail)
+    expect(samples16(sent.at(-2))).toEqual(samples16(toPcm16(tail)))
     expect(JSON.parse(String(sent.at(-1)))).toEqual({ type: 'end' })
   })
 
-  it('reports sustained WebSocket backpressure instead of silently discarding captured speech', async () => {
+  it('keeps audio under sustained backpressure and makes a stalled connection again', async () => {
     installLivePlatform()
-    const { result } = renderHook(() => useLiveInterpretation('ses_1'))
-    await waitFor(() => expect(result.current.session).not.toBeNull())
-    await act(async () => result.current.start())
-    const socket = FakeSocket.instances[0]!
-    const worklet = FakeWorkletNode.instances[0]!
-    await act(async () => { socket.open(); socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_c', chunkMs: 100 }); await Promise.resolve() })
-    socket.bufferedAmount = 1_000_000
-    act(() => worklet.port.onmessage?.(new MessageEvent('message', { data: new Float32Array([0.2]).buffer })))
-    expect(result.current.state).toBe('error')
-    expect(result.current.error).toContain('too slow')
-    expect(socket.close).toHaveBeenCalled()
+    const timing = { ...liveTiming }
+    liveTiming.stallMs = -1; liveTiming.reconnectFirstMs = 0
+    try {
+      const { result } = renderHook(() => useLiveInterpretation('ses_1'))
+      await waitFor(() => expect(result.current.session).not.toBeNull())
+      await act(async () => result.current.start())
+      const socket = FakeSocket.instances[0]!
+      const worklet = FakeWorkletNode.instances[0]!
+      await act(async () => { socket.open(); socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_c', chunkMs: 100, offsetMs: 0 }); await Promise.resolve() })
+      socket.bufferedAmount = 1_000_000
+      const frame = new Float32Array([0.2]).buffer
+      act(() => worklet.port.onmessage?.(new MessageEvent('message', { data: frame })))
+      // Nothing is thrown away and nothing ends: the connection is made again.
+      expect(socket.send).toHaveBeenCalledTimes(1)
+      expect(socket.close).toHaveBeenCalled()
+      expect(result.current.state).toBe('reconnecting')
+      expect(result.current.error).toBe('')
+      await waitFor(() => expect(FakeSocket.instances[1]).toBeDefined())
+      const again = FakeSocket.instances[1]!
+      expect(again.url).toContain('resume=true')
+      liveTiming.stallMs = timing.stallMs
+      await act(async () => { again.open(); again.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_d', chunkMs: 100, offsetMs: 0 }) })
+      expect(result.current.state).toBe('live')
+      expect(again.send.mock.calls.slice(1).map(([payload]) => samples16(payload))).toEqual([samples16(toPcm16(frame))])
+    } finally { Object.assign(liveTiming, timing) }
   })
-  it('moves to an actionable error and retires the socket when the microphone ends', async () => {
+
+  it('takes the microphone back without ending the recording when the system stops it', async () => {
     const platform = installLivePlatform()
     const { result } = renderHook(() => useLiveInterpretation('ses_1'))
     await waitFor(() => expect(result.current.session).not.toBeNull())
     await act(async () => result.current.start())
-    const socket = FakeSocket.instances[0]
-    await act(async () => { socket?.open(); socket?.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100 }) })
+    const socket = FakeSocket.instances[0]!
+    await act(async () => { socket.open(); socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100 }) })
+    const context = FakeAudioContext.instances[0]!
 
-    await act(async () => { if (platform.streams[0]) platform.streams[0].active = false; platform.tracks[0]?.end() })
-    expect(result.current.state).toBe('error')
-    expect(result.current.error).toContain('microphone stopped unexpectedly')
-    expect(socket?.close).toHaveBeenCalled()
+    await act(async () => { platform.streams[0]!.active = false; platform.tracks[0]!.end(); await Promise.resolve() })
+    await waitFor(() => expect(platform.getUserMedia).toHaveBeenCalledTimes(2))
+    // The new microphone feeds the same recording: same context, same connection.
+    await waitFor(() => expect(context.createMediaStreamSource).toHaveBeenCalledTimes(2))
+    expect(result.current.state).toBe('live')
+    expect(result.current.error).toBe('')
+    expect(result.current.microphoneBlocked).toBe(false)
+    expect(socket.close).not.toHaveBeenCalled()
+    expect(platform.tracks[0]!.stop).toHaveBeenCalled()
+    const notes = socket.send.mock.calls.map(([payload]) => payload).filter((payload): payload is string => typeof payload === 'string').map(payload => JSON.parse(payload) as { type: string; event?: string })
+    expect(notes).toContainEqual({ type: 'note', event: 'microphone_restarted' })
+  })
+
+  it('keeps recording and asks for a tap when the microphone cannot be taken back', async () => {
+    const platform = installLivePlatform()
+    const { result } = renderHook(() => useLiveInterpretation('ses_1'))
+    await waitFor(() => expect(result.current.session).not.toBeNull())
+    await act(async () => result.current.start())
+    const socket = FakeSocket.instances[0]!
+    await act(async () => { socket.open(); socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100 }) })
+    platform.getUserMedia.mockRejectedValueOnce(new DOMException('Not now', 'NotAllowedError'))
+
+    await act(async () => { platform.streams[0]!.active = false; platform.tracks[0]!.end(); await Promise.resolve() })
+    await waitFor(() => expect(result.current.microphoneBlocked).toBe(true))
+    expect(result.current.state).toBe('live')
+    expect(socket.close).not.toHaveBeenCalled()
+    // The tap tries again.
+    await act(async () => { result.current.resumeMicrophone(); await Promise.resolve() })
+    await waitFor(() => expect(result.current.microphoneBlocked).toBe(false))
+    expect(platform.getUserMedia).toHaveBeenCalledTimes(3)
+  })
+
+  it('tells the server when the page goes to the background and says why it reconnects', async () => {
+    installLivePlatform()
+    const timing = { ...liveTiming }
+    liveTiming.reconnectFirstMs = 0
+    const visibility = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState')
+    let visible: DocumentVisibilityState = 'visible'
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visible })
+    try {
+      const { result } = renderHook(() => useLiveInterpretation('ses_1'))
+      await waitFor(() => expect(result.current.session).not.toBeNull())
+      await act(async () => result.current.start())
+      const socket = FakeSocket.instances[0]!
+      await act(async () => { socket.open(); socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100, offsetMs: 0 }) })
+      const hello = JSON.parse(String(socket.send.mock.calls[0]![0])) as { client: { reason: string } }
+      expect(hello.client.reason).toBe('start')
+
+      await act(async () => { visible = 'hidden'; document.dispatchEvent(new Event('visibilitychange')) })
+      expect(JSON.parse(String(socket.send.mock.calls.at(-1)![0]))).toEqual({ type: 'note', event: 'hidden' })
+      // The system closes the connection while the page is away.
+      await act(async () => { socket.readyState = FakeSocket.CLOSED; socket.onclose?.(new CloseEvent('close', { code: 1006, reason: '' })) })
+      expect(result.current.state).toBe('reconnecting')
+      await act(async () => { visible = 'visible'; document.dispatchEvent(new Event('visibilitychange')) })
+      await waitFor(() => expect(FakeSocket.instances[1]).toBeDefined())
+      const again = FakeSocket.instances[1]!
+      await act(async () => again.open())
+      const resumed = JSON.parse(String(again.send.mock.calls[0]![0])) as { client: { reason: string; lastClose: { code: number }; hiddenMs: number } }
+      expect(resumed.client.reason).toBe('reconnect')
+      expect(resumed.client.lastClose.code).toBe(1006)
+      expect(resumed.client.hiddenMs).toBeGreaterThanOrEqual(0)
+    } finally {
+      Object.assign(liveTiming, timing)
+      if (visibility) Object.defineProperty(document, 'visibilityState', visibility)
+      else delete (document as { visibilityState?: unknown }).visibilityState
+    }
+  })
+
+  it('goes on recording when the conversation says a failed run of its own recording stopped', async () => {
+    installLivePlatform()
+    const streams: Array<{ onmessage: ((event: MessageEvent) => void) | null }> = []
+    vi.stubGlobal('EventSource', class { onmessage: ((event: MessageEvent) => void) | null = null; onerror = null; constructor() { streams.push(this) } close() {} })
+    const { result } = renderHook(() => useLiveInterpretation('ses_1'))
+    await waitFor(() => expect(result.current.session).not.toBeNull())
+    await act(async () => result.current.start())
+    const socket = FakeSocket.instances[0]!
+    await act(async () => { socket.open(); socket.message({ type: 'ready', sessionId: 'ses_1', runId: 'run_1', chunkMs: 100, offsetMs: 0 }) })
+    await waitFor(() => expect(streams.length).toBeGreaterThan(0))
+    // The server ended a run while this browser's connection was held up; the connection decides.
+    await act(async () => { streams.at(-1)!.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'stopped', status: 'failed' }) })) })
+    expect(result.current.state).toBe('live')
+    expect(result.current.error).toBe('')
+    expect(socket.close).not.toHaveBeenCalled()
+    // A recording someone stopped still stops here.
+    await act(async () => { streams.at(-1)!.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'stopped', status: 'completed' }) })) })
+    expect(result.current.state).toBe('ended')
   })
 
   it('invalidates the browser auth state when the live service revokes it', async () => {

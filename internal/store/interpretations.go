@@ -26,8 +26,20 @@ func (s *Store) CreateInterpretationSession(
 	ctx context.Context,
 	session domain.InterpretationSession,
 ) error {
+	// Every session is kept in a workspace: without one named, the owner's
+	// most recently used.
+	if session.WorkspaceID == "" && session.UserID != "" {
+		recent, err := s.recentWorkspaceID(ctx, session.UserID, session.CreatedAt)
+		if err != nil {
+			return err
+		}
+		session.WorkspaceID = recent
+	}
 	if err := validateInterpretationSession(session); err != nil {
 		return err
+	}
+	if session.WorkspaceID == "" {
+		return errors.New("store: interpretation session workspace is required")
 	}
 	recognition, err := json.Marshal(nonNilLanguages(session.RecognitionLanguages))
 	if err != nil {
@@ -37,15 +49,17 @@ func (s *Store) CreateInterpretationSession(
 		INSERT INTO interpretation_sessions(
 			id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at,
-			recognition_languages_json, diarization
+			recognition_languages_json, diarization, workspace_id
 		)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-		WHERE (SELECT COUNT(*) FROM interpretation_sessions WHERE user_id = ?) < ?`,
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		WHERE (SELECT COUNT(*) FROM interpretation_sessions WHERE user_id = ?) < ?
+			AND EXISTS (SELECT 1 FROM workspaces WHERE id = ? AND user_id = ?)`,
 		session.ID, session.UserID, session.Title, session.SourceLanguage,
 		session.TargetLanguage, session.Status, encodeTime(session.CreatedAt),
 		encodeTime(session.UpdatedAt), encodeOptionalTime(session.StartedAt),
 		encodeOptionalTime(session.EndedAt), string(recognition), boolInt(session.Diarization),
-		session.UserID, maxInterpretationSessionsPerUser,
+		session.WorkspaceID, session.UserID, maxInterpretationSessionsPerUser,
+		session.WorkspaceID, session.UserID,
 	)
 	if err != nil {
 		return fmt.Errorf("store: create interpretation session: %w", mapSQLError(err))
@@ -55,6 +69,14 @@ func (s *Store) CreateInterpretationSession(
 		return fmt.Errorf("store: inspect interpretation session creation: %w", err)
 	}
 	if count == 0 {
+		// Either the owner is at capacity, or the workspace is not theirs.
+		var owned int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspaces WHERE id = ? AND user_id = ?`, session.WorkspaceID, session.UserID).Scan(&owned); err != nil {
+			return fmt.Errorf("store: inspect interpretation session workspace: %w", err)
+		}
+		if owned == 0 {
+			return ErrNotFound
+		}
 		return ErrCapacity
 	}
 	return nil
@@ -98,7 +120,7 @@ func (s *Store) GetInterpretationSession(
 	return scanInterpretationSession(s.db.QueryRowContext(ctx, `
 		SELECT id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at, archived_at, archive_reason,
-			recognition_languages_json, diarization
+			recognition_languages_json, diarization, COALESCE(workspace_id, '')
 		FROM interpretation_sessions WHERE id = ? AND user_id = ?`,
 		sessionID, ownerID,
 	))
@@ -115,7 +137,7 @@ func scanInterpretationSession(row rowScanner) (domain.InterpretationSession, er
 		&session.ID, &session.UserID, &session.Title, &session.SourceLanguage,
 		&session.TargetLanguage, &status, &createdAt, &updatedAt,
 		&startedAt, &endedAt, &archivedAt, &session.ArchiveReason,
-		&recognitionJSON, &diarization,
+		&recognitionJSON, &diarization, &session.WorkspaceID,
 	); err != nil {
 		return domain.InterpretationSession{}, mapSQLError(err)
 	}
@@ -146,7 +168,7 @@ func (s *Store) ListInterpretationSessions(
 	query := `
 		SELECT id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at, archived_at, archive_reason,
-			recognition_languages_json, diarization
+			recognition_languages_json, diarization, COALESCE(workspace_id, '')
 		FROM interpretation_sessions WHERE user_id = ?`
 	args := []any{ownerID}
 	if status != nil {
@@ -228,7 +250,7 @@ func (s *Store) UpdateInterpretationSessionMetadata(
 		WHERE id = ? AND user_id = ? AND status <> 'live' AND archived_at IS NULL
 		RETURNING id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at, archived_at, archive_reason,
-			recognition_languages_json, diarization`,
+			recognition_languages_json, diarization, COALESCE(workspace_id, '')`,
 		title, sourceLanguage, targetLanguage, encodeTime(updatedAt), sessionID, ownerID,
 	))
 	if errors.Is(err, ErrNotFound) {
@@ -260,7 +282,7 @@ func (s *Store) UpdateInterpretationSessionConfiguration(
 		WHERE id = ? AND user_id = ? AND status <> 'live' AND archived_at IS NULL
 		RETURNING id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at, archived_at, archive_reason,
-			recognition_languages_json, diarization`,
+			recognition_languages_json, diarization, COALESCE(workspace_id, '')`,
 		title, sourceLanguage, targetLanguage, string(recognition), boolInt(diarization), encodeTime(updatedAt), sessionID, ownerID,
 	))
 	if errors.Is(err, ErrNotFound) {
@@ -299,7 +321,7 @@ func (s *Store) ClaimInterpretationSessionLive(
 		WHERE id = ? AND user_id = ? AND archived_at IS NULL
 		RETURNING id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at, archived_at, archive_reason,
-			recognition_languages_json, diarization`,
+			recognition_languages_json, diarization, COALESCE(workspace_id, '')`,
 		encodeTime(updatedAt), encodeTime(updatedAt), sessionID, ownerID,
 	))
 	if errors.Is(err, ErrNotFound) {
@@ -354,7 +376,7 @@ func (s *Store) ArchiveInterpretationSession(ctx context.Context, ownerID, sessi
 		WHERE id = ? AND user_id = ? AND status <> 'live' AND archived_at IS NULL
 		RETURNING id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at, archived_at, archive_reason,
-			recognition_languages_json, diarization`,
+			recognition_languages_json, diarization, COALESCE(workspace_id, '')`,
 		encodeTime(now), encodeTime(now), sessionID, ownerID,
 	))
 	if errors.Is(err, ErrNotFound) {
@@ -385,7 +407,7 @@ func (s *Store) UnarchiveInterpretationSession(ctx context.Context, ownerID, ses
 		WHERE id = ? AND user_id = ? AND archived_at IS NOT NULL
 		RETURNING id, user_id, title, source_language, target_language, status,
 			created_at, updated_at, started_at, ended_at, archived_at, archive_reason,
-			recognition_languages_json, diarization`,
+			recognition_languages_json, diarization, COALESCE(workspace_id, '')`,
 		encodeTime(now), sessionID, ownerID,
 	))
 	if errors.Is(err, ErrNotFound) {

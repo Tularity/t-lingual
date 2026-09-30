@@ -132,6 +132,10 @@ function frameIn(rect: DOMRect) {
 /** Dots drawn back into their own logo shrink to this share of their size. */
 const HOME_SCALE = 0.4
 
+/** The first dot leaves a gathering at once; a worker that has sent none by
+ *  now is not drawing it, and the gathering is ended without it. */
+const SILENT_GATHERING_MS = 4000
+
 export const CollapseMark = forwardRef<HTMLDivElement, CollapseMarkProps>(function CollapseMark(
   {
     size, duration = 12, once = false, onEnd, from = 0, to = 1, delay = 0,
@@ -210,7 +214,14 @@ export const CollapseMark = forwardRef<HTMLDivElement, CollapseMarkProps>(functi
             }
             remeasure()
           })
-    observer?.observe(canvas, { box: 'device-pixel-content-box' })
+    // Safari hands a canvas to a worker but has no device-pixel box, and an
+    // unknown box is a TypeError, not a no-op; there the content box, scaled
+    // by devicePixelRatio above, stands in for it.
+    try {
+      observer?.observe(canvas, { box: 'device-pixel-content-box' })
+    } catch {
+      observer?.observe(canvas)
+    }
     if (spill) {
       observer?.observe(element)
       window.addEventListener('scroll', remeasure, { capture: true, passive: true })
@@ -242,7 +253,19 @@ export const CollapseMark = forwardRef<HTMLDivElement, CollapseMarkProps>(functi
     /** This pass is sending its dots to a logo, so it will come to rest. */
     let sending = false
     let serial = 0
-    let gathering: { id: number; since: number; to: ReturnType<typeof destination>; logo: Element | null } | null = null
+    let gathering: { id: number; since: number; to: ReturnType<typeof destination>; logo: Element | null; departed?: boolean } | null = null
+    /** The worker failed — its script refused, or its drawing threw. */
+    let broken = false
+    // Whoever waits on a gathering is never left waiting on a worker that
+    // cannot draw it: the gathering is over as soon as it is asked for.
+    const giveUp = () => {
+      if (!gathering) return
+      const { logo: to, departed } = gathering
+      gathering = null
+      if (!to) return
+      if (!departed) timing.current.onGather?.(to)
+      timing.current.onGathered?.()
+    }
     const lingers = () => {
       const { linger: asked } = timing.current
       return typeof asked === 'function' ? asked() : asked
@@ -251,9 +274,15 @@ export const CollapseMark = forwardRef<HTMLDivElement, CollapseMarkProps>(functi
       const { gatherTo: asked } = timing.current
       return typeof asked === 'function' ? asked() : asked
     }
+    worker.onerror = (event) => {
+      event.preventDefault()
+      broken = true
+      giveUp()
+    }
     worker.onmessage = ({ data }: MessageEvent<CollapseMarkGatherEvent>) => {
       if (data.id !== gathering?.id) return
       const { logo: to } = gathering
+      if (data.event === 'departed') gathering.departed = true
       if (data.event === 'departed' && to) timing.current.onGather?.(to)
       if (data.event === 'gathered') {
         gathering = null
@@ -297,6 +326,7 @@ export const CollapseMark = forwardRef<HTMLDivElement, CollapseMarkProps>(functi
         ? { id: gathering.id, since: gathering.since, now, ...gathering.to, previous: !gathering.logo }
         : undefined
       post({ type: 'draw', phase, frame: { lingerFrom, gather } })
+      if (broken || (gathering && !gathering.departed && now - gathering.since > SILENT_GATHERING_MS)) giveUp()
       if (ended) timing.current.onEnd?.()
       if (nothingToSend) {
         timing.current.onGather?.(nothingToSend)

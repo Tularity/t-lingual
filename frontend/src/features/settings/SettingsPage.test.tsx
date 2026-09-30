@@ -20,11 +20,15 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   getPasskey: vi.fn(),
   createPasskey: vi.fn(),
+  updateProfile: vi.fn(),
+  removeAvatar: vi.fn(),
+  accountUpdated: vi.fn(),
 }))
 
 vi.mock('../../api/client', () => ({
   api: {
     mode: 'mock',
+    account: { updateProfile: mocks.updateProfile, removeAvatar: mocks.removeAvatar, setAvatar: vi.fn(), avatarUrl: () => '/avatar.png' },
     recognition: {capabilities:async()=>({configured:true,languages:['en','zh-Hans','fr'],automatic:true,diarization:true})},
     settings: {
       get: vi.fn().mockResolvedValue({
@@ -57,10 +61,11 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../../api/webauthn', () => ({ getPasskey: mocks.getPasskey, createPasskey: mocks.createPasskey }))
 
-vi.mock('../../app/auth', () => ({ useAuth: () => ({ refresh: mocks.refresh, user: {
+const signedIn = vi.hoisted(() => ({ user: {
   id: 'user', username: 'listener', displayName: 'Sam Listener', role: 'user', status: 'active',
-  createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
-} }) }))
+  createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', avatarVersion: undefined as number | undefined,
+} }))
+vi.mock('../../app/auth', () => ({ useAuth: () => ({ refresh: mocks.refresh, accountUpdated: mocks.accountUpdated, user: signedIn.user }) }))
 vi.mock('../../app/router', () => ({ useRouter: () => ({ navigate: mocks.navigate }) }))
 
 describe('settings security session actions', () => {
@@ -145,10 +150,31 @@ describe('settings security session actions', () => {
     render(<ThemeProvider><ToastProvider><SettingsPage /></ToastProvider></ThemeProvider>)
 
     expect(await screen.findByRole('heading', { name: 'Your account' })).toBeInTheDocument()
-    expect(screen.getAllByText('Sam Listener')).toHaveLength(2)
+    expect(screen.getByText('Sam Listener')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue('Sam Listener')
     expect(screen.getByText('Member since')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Security settings' }))
     expect(screen.getByRole('heading', { name: 'Your passkeys' })).toBeInTheDocument()
+  })
+
+  it('renames the account and removes its photo, taking in what the server returned', async () => {
+    signedIn.user.avatarVersion = 17
+    const renamed = { ...signedIn.user, displayName: 'Sam L.' }
+    mocks.updateProfile.mockReset().mockResolvedValue(renamed)
+    mocks.removeAvatar.mockReset().mockResolvedValue({ ...signedIn.user, avatarVersion: undefined })
+    mocks.accountUpdated.mockReset()
+    const user = userEvent.setup()
+    render(<ThemeProvider><ToastProvider><SettingsPage /></ToastProvider></ThemeProvider>)
+    const name = await screen.findByRole('textbox', { name: 'Display name' })
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    await user.clear(name)
+    await user.type(name, 'Sam L.')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ displayName: 'Sam L.' }))
+    expect(mocks.accountUpdated).toHaveBeenCalledWith(renamed)
+    await user.click(screen.getByRole('button', { name: 'Remove photo' }))
+    await waitFor(() => expect(mocks.removeAvatar).toHaveBeenCalled())
+    signedIn.user.avatarVersion = undefined
   })
 
   it('keeps recognition and personal translation defaults independent, including same-language captions', async () => {

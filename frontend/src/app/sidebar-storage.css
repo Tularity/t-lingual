@@ -1,0 +1,28 @@
+/* The account's storage, just above the account in the sidebar. The links
+ * above take the spare height and scroll when there are more than fit, so the
+ * storage and the account stay in view at the foot. */
+.app-sidebar>.app-nav{flex:1 1 auto;min-height:0;align-content:start;margin:0 -4px;padding:0 4px 12px;overflow-y:auto}
+.sidebar-storage{display:grid;flex:none;gap:7px;margin-top:auto;padding-top:10px;color:inherit;text-decoration:none}
+.sidebar-storage:focus-visible{border-radius:3px;outline:var(--tl-focus-width) solid var(--tl-focus-ring);outline-offset:var(--tl-focus-offset)}
+.sidebar-storage__line{display:flex;align-items:center;gap:6px;min-width:0;padding:0 4px;color:var(--tl-text-secondary);font-size:10.5px;font-variant-numeric:tabular-nums;transition:color var(--tl-duration-sm) var(--tl-ease-out)}
+.sidebar-storage__line>svg{flex:none;color:var(--tl-text-muted)}
+.sidebar-storage__line>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-storage__line>small{flex:none;margin-inline-start:auto;color:var(--tl-text-muted);font-size:10.5px}
+.sidebar-storage:hover .sidebar-storage__line{color:var(--tl-text)}
+/* The meter is the divider itself: a hairline track in the divider's colour. */
+.sidebar-storage__meter{--_thickness:2px;--_track:var(--color-border);border-radius:0}
+.sidebar-storage[data-level=high] .sidebar-storage__meter{--_fill:var(--tl-warning-solid)}
+.sidebar-storage[data-level=full] .sidebar-storage__meter{--_fill:var(--tl-danger-solid)}
+.sidebar-storage[data-level=full] small{color:var(--tl-danger-fg)}
+.sidebar-storage + .app-sidebar__footer{margin-top:0;border-top:0}
+
+/* What the space holds, beside it on hover or focus. The card is wider than a
+ * one-line tip, and its quiet text is the tip's own colour, dimmed. */
+.storage-tip{max-width:none}
+.storage-card{display:grid;gap:9px;width:max-content;min-width:230px;max-width:300px;padding:4px 2px}
+.storage-card>strong{font-size:12.5px}
+.storage-card dl{display:grid;gap:5px;margin:0}
+.storage-card dl>div{display:flex;justify-content:space-between;gap:16px}
+.storage-card dt{opacity:.72;font-size:11.5px}
+.storage-card dd{margin:0;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;text-align:end}
+.storage-card p{max-width:300px;margin:0;opacity:.72;font-size:10.5px;font-weight:400;line-height:1.45}

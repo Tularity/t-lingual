@@ -1,8 +1,8 @@
 import { useI18n } from '../../app/i18n'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, EmptyState, Icon, Spinner, Tooltip } from '@t-lingual/ui'
 import { api } from '../../api/client'
-import type { Segment, SegmentPageResponse } from '../../api/contracts'
+import type { RecognitionGap, Segment, SegmentPageResponse } from '../../api/contracts'
 import { errorMessage, formatTimestamp } from '../../app/utils'
 import { mergeWindow, PAGE_SIZE, scrollAnchorTop, speakerDisplay, speakerTone, WINDOW_LIMIT, type TranscriptSegment } from './windowModel'
 import { LanguageLabel } from '../languages'
@@ -28,6 +28,15 @@ export interface TranscriptViewportProps {
   initialHasEarlier?: boolean
   initialHasLater?: boolean
   onWindowChange?: (rows: Segment[]) => void
+  /** Stretches of audio recognition missed; their lines arrive later, in their place. */
+  gaps?: RecognitionGap[]
+  /**
+   * Without its own frame and heading, for a page that draws the frame itself
+   * with its reading tools across the top. (The tools cannot live inside: the
+   * viewport starts afresh for every search, and would take a search box's
+   * focus with it.)
+   */
+  bare?: boolean
 }
 
 function normalized(items: Segment[]) {
@@ -40,6 +49,18 @@ function translationFailure(code?: string) {
   if (code === 'source_language_unsupported') return 'This source language is not supported'
   if (code === 'capacity_exhausted') return 'Translation is busy. Try again later'
   return 'Translation unavailable'
+}
+
+/** Where recognition missed some audio: waiting to be recognized, being recognized, or not recognized. */
+function GapMarker({ gap }: { gap: RecognitionGap }) {
+  const { t } = useI18n()
+  const span = { from: formatTimestamp(gap.startMs), to: formatTimestamp(gap.endMs) }
+  return <div className="tv-gap" data-state={gap.state} role="note">
+    <Icon name={gap.state === 'failed' ? 'warning' : gap.state === 'filling' ? 'refresh' : 'history'} size={15} />
+    <span>{gap.state === 'failed' ? t('Speech from {from} to {to} couldn’t be recognized. The audio is still saved.', span)
+      : gap.state === 'filling' ? t('Recognizing speech from {from} to {to} that was missed while recognition was away…', span)
+      : t('Speech from {from} to {to} was missed while recognition was away. It will appear here once recognition catches up.', span)}</span>
+  </div>
 }
 
 function TranscriptRow({ segment, sourceLanguage, targetLanguage, display, playing, onSeekTime }: {
@@ -62,7 +83,7 @@ function TranscriptRow({ segment, sourceLanguage, targetLanguage, display, playi
   </article>
 }
 
-function ViewportInner({ sessionId, playback, onSeekTime, segments, sourceLanguage, targetLanguage, live = false, query = '', display = 'parallel', compact = false, emptyTitle = 'No transcript yet', emptyDescription = 'Recognized speech will appear here.', initialHasMore = false, initialHasEarlier, initialHasLater, onWindowChange }: TranscriptViewportProps) {
+function ViewportInner({ sessionId, playback, onSeekTime, segments, sourceLanguage, targetLanguage, live = false, query = '', display = 'parallel', compact = false, emptyTitle = 'No transcript yet', emptyDescription = 'Recognized speech will appear here.', initialHasMore = false, initialHasEarlier, initialHasLater, onWindowChange, gaps = [], bare = false }: TranscriptViewportProps) {
   const {t}=useI18n()
 
   const search = query.trim()
@@ -261,7 +282,13 @@ function ViewportInner({ sessionId, playback, onSeekTime, segments, sourceLangua
       return
     }
     const known = new Set(rowsRef.current.map((segment) => segment.sequence))
-    const updates = incoming.filter((segment) => known.has(segment.sequence))
+    const first = rowsRef.current[0]?.sequence ?? 0
+    const last = rowsRef.current.at(-1)?.sequence ?? 0
+    // Lines recognized late, from audio recognition missed, belong between
+    // lines already shown: their sequence numbers were kept free for them.
+    const inside = incoming.filter((segment) => !known.has(segment.sequence) && segment.sequence > first && segment.sequence < last)
+    const updates = [...incoming.filter((segment) => known.has(segment.sequence)), ...inside]
+    if (inside.length && rowsRef.current.length + inside.length > WINDOW_LIMIT) setHasEarlier(true)
     const tail = incoming.filter((segment) => segment.sequence > (rowsRef.current.at(-1)?.sequence ?? 0))
     const canAppend = live && followingRef.current && !laterRef.current
     if (updates.length || canAppend && tail.length) {
@@ -318,14 +345,23 @@ function ViewportInner({ sessionId, playback, onSeekTime, segments, sourceLangua
   const visibleLanguages=[...new Set(rows.map(row=>row.detectedLanguage).filter(code=>code&&code!=='auto'))]
   const visibleSource=visibleLanguages.length===1?visibleLanguages[0]!:visibleLanguages.length>1?'auto':sourceLanguage
   const noRows = rows.length === 0 && busy !== 'search'
-  return <section className="tv" data-display={display} data-compact={compact || undefined} data-following={following || undefined}>
-    <div className="tv__top"><div className="tv__heading"><Icon name="wave" size={19} /><h2>{t("Transcript")}</h2>{live && <Badge variant="accent" size="sm" dot>{t("Live")}</Badge>}</div><div className="tv__count">{rows.length ? t('{count} shown',{count:rows.length}) : search ? t("Search results") : t("No phrases")}{hasEarlier || hasLater ? t(" · more available") : ''}</div></div>
+  // A gap shows after the lines already recognized in it, before the first
+  // line after it — and only where this window reaches both sides of it.
+  const openGaps = search ? [] : gaps.filter((gap) => gap.state !== 'filled' && (!hasEarlier || (rows[0]?.sequence ?? Infinity) < gap.sequenceFrom))
+  const gapsBefore = (index: number) => openGaps.filter((gap) => rows[index]!.sequence > gap.sequenceTo && (index === 0 || rows[index - 1]!.sequence <= gap.sequenceTo))
+  const trailingGaps = hasLater ? [] : openGaps.filter((gap) => (rows.at(-1)?.sequence ?? 0) <= gap.sequenceTo)
+  return <section className="tv" data-bare={bare || undefined} data-display={display} data-compact={compact || undefined} data-following={following || undefined}>
+    {!bare && <div className="tv__top"><div className="tv__heading"><Icon name="wave" size={19} /><h2>{t("Transcript")}</h2>{live && <Badge variant="accent" size="sm" dot>{t("Live")}</Badge>}</div><div className="tv__count">{rows.length ? t('{count} shown',{count:rows.length}) : search ? t("Search results") : t("No phrases")}{hasEarlier || hasLater ? t(" · more available") : ''}</div></div>}
     <div className="tv__columns"><span>{t("Time")}</span>{display !== 'translation' && <span><LanguageLabel code={visibleSource}>{visibleSource === 'auto' ? t("Mixed languages") : undefined}</LanguageLabel> <small>{t("Original")}</small></span>}{display !== 'source' && <span><LanguageLabel code={targetLanguage} /> <small>{t("Translation")}</small></span>}</div>
     <div ref={scrollRef} className="tv__scroll" tabIndex={0} role="region" aria-label={t("Transcript entries")} onScroll={onScroll}>
       {hasEarlier && <div className="tv__edge"><Button size="sm" variant="subtle" icon={<Icon name="arrowUp" size={15} />} loading={busy === 'older'} onClick={() => void requestPage('older')}>{t("Earlier phrases")}</Button>{earlierError && <span role="alert">{earlierError} <button type="button" onClick={() => void requestPage('older')}>{t("Retry")}</button></span>}</div>}
       {busy === 'search' && <div className="tv__loading"><Spinner label={t("Searching transcript")} /></div>}
       {noRows && !laterError && <div className="tv__empty"><EmptyState icon={<Icon name={search ? 'search' : 'wave'} />} title={search ? t("No matching phrases") : emptyTitle} description={search ? t("Try another word or phrase.") : emptyDescription} /></div>}
-      {rows.map((segment) => <TranscriptRow key={`${sessionId}:${segment.sequence}`} segment={segment} playing={playback!==undefined&&playback.timeMs>=segment.startMs&&playback.timeMs<segment.endMs} onSeekTime={onSeekTime} sourceLanguage={sourceLanguage} targetLanguage={targetLanguage} display={display} />)}
+      {rows.map((segment, index) => <Fragment key={`${sessionId}:${segment.sequence}`}>
+        {gapsBefore(index).map((gap) => <GapMarker key={gap.id} gap={gap} />)}
+        <TranscriptRow segment={segment} playing={playback!==undefined&&playback.timeMs>=segment.startMs&&playback.timeMs<segment.endMs} onSeekTime={onSeekTime} sourceLanguage={sourceLanguage} targetLanguage={targetLanguage} display={display} />
+      </Fragment>)}
+      {rows.length ? trailingGaps.map((gap) => <GapMarker key={gap.id} gap={gap} />) : null}
       {hasLater && <div className="tv__edge"><Button size="sm" variant="subtle" icon={<Icon name="arrowDown" size={15} />} loading={busy === 'newer'} onClick={() => void requestPage('newer')}>{t("Newer phrases")}</Button></div>}
       {laterError && <div className="tv__edge tv__edge--error" role="alert"><span>{laterError}</span><Button size="sm" onClick={() => { if (search && rows.length === 0) { setLaterError(''); setBusy('search'); setSearchAttempt((attempt) => attempt + 1) } else void (hasLater ? requestPage('newer') : jumpToLatest()) }}>{t("Retry")}</Button></div>}
     </div>

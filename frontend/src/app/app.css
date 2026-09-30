@@ -1,24 +1,34 @@
 .app-frame { --app-header-height:64px; display:grid; height:100dvh; min-height:0; grid-template-rows:var(--app-header-height) minmax(0,1fr); padding-left:var(--sidebar-width); overflow:hidden; }
 .app-sidebar { position: fixed; z-index: 20; inset: 0 auto 0 0; display: flex; width: var(--sidebar-width); flex-direction: column; padding: 28px 16px 16px; border-right: 1px solid var(--color-border); background: var(--color-surface); overflow-y:auto; }
-.app-sidebar__brand { display: inline-flex; align-self: flex-start; margin: 0 0 38px; padding: 0 5px; border: 0; border-radius: var(--tl-radius-md); color: inherit; background: none; font: inherit; text-align: start; cursor: pointer; transition: background-color var(--tl-duration-sm) var(--tl-ease-out); }
-.app-sidebar__brand:hover { background: color-mix(in oklab, var(--color-text) 5%, transparent); }
+/* The logo opens the guide, but stays the logo: no button surface on hover. */
+.app-sidebar__brand { display: inline-flex; align-self: flex-start; margin: 0 0 30px; padding: 0 5px; border: 0; border-radius: var(--tl-radius-md); color: inherit; background: none; font: inherit; text-align: start; cursor: pointer; }
 .app-sidebar__brand:focus-visible { outline: var(--tl-focus-width) solid var(--tl-focus-ring); outline-offset: 3px; }
 .brand { display: inline-flex; align-items: center; gap: 7px; }
 /* The logo file is framed on its body square's centre, so the box is centred
  * on the body and the tail reaches toward the wordmark. */
 .brand__mark { display:block; width: 48px; height: 42px; object-fit: contain; transform: scale(1.32); }
-.brand__word { display: grid; font-size: 20px; font-weight: 730; letter-spacing: -.055em; line-height: 1.15; }
+/* The name in capitals, opened up a little as capitals need. */
+.brand__word { display: grid; font-size: 19px; font-weight: 730; letter-spacing: .02em; line-height: 1.15; text-transform: uppercase; }
 .brand__word > span { margin-top: 4px; font-size: 9px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--color-text-tertiary); }
 .app-nav { display: grid; gap: 5px; }
 .app-nav__label { margin: 0 12px 10px; color: var(--color-text-tertiary); font-size: 10px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; }
-.app-nav__label--admin { margin-top: 28px; }
-.app-nav__link { position:relative; display:flex; min-height: 42px; align-items: center; gap: 12px; padding: 0 12px; border-radius: 7px; color: var(--color-text-secondary); font-size: 13px; font-weight: 550; transition: color 160ms, background 160ms; }
+.app-nav__label--group { margin-top: 22px; }
+.app-nav__link { position:relative; display:flex; min-width: 0; min-height: 38px; align-items: center; gap: 12px; padding: 0 12px; border-radius: 7px; color: var(--color-text-secondary); font-size: 13px; font-weight: 550; transition: color 160ms, background 160ms; }
+.app-nav__link > svg { flex: none; }
+.app-nav__link > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Making a workspace, rather than going to one: a button, and quieter. */
+.app-nav__link--quiet { width: 100%; border: 0; background: none; color: var(--color-text-tertiary); font: inherit; font-size: 13px; font-weight: 550; text-align: start; cursor: pointer; }
+.app-nav__link--quiet:focus-visible { outline: var(--tl-focus-width) solid var(--tl-focus-ring); outline-offset: -2px; }
 .app-nav__link:hover { background: var(--color-surface-muted); color: var(--color-text); }
 .app-nav__link[data-active] { color: var(--color-brown); background: var(--color-surface-accent); }
-.app-sidebar__note { margin: auto 10px 30px; padding-top: 40px; color: var(--color-text-tertiary); }
-.app-sidebar__note strong { display:block; margin-top: 10px; color: var(--color-text-secondary); font-size: 12px; font-weight: 600; }
-.app-sidebar__note p { font-size: 11px; line-height: 1.7; margin: 5px 0 0; max-width: 150px; }
-.app-sidebar__footer { display:flex; width:100%; align-items:center; gap:5px; padding:18px 0 0; border-top: 1px solid var(--color-border); }
+/* A pinned workspace: its pin stays in view at the row's end, and unpins it. */
+.app-nav__item { position:relative; display:grid; }
+.app-nav__item > .app-nav__link { padding-inline-end:40px; }
+.app-nav__pin { position:absolute; inset-block:0; inset-inline-end:5px; display:grid; width:28px; height:28px; margin-block:auto; place-items:center; padding:0; border:0; border-radius:6px; color:var(--color-brown); background:color-mix(in srgb, var(--color-brown) 12%, transparent); cursor:pointer; transition:color 160ms, background 160ms; }
+.app-nav__pin > svg { transform:rotate(40deg); }
+.app-nav__pin:hover { background:color-mix(in srgb, var(--color-brown) 22%, transparent); }
+.app-nav__pin:focus-visible { outline:var(--tl-focus-width) solid var(--tl-focus-ring); outline-offset:-2px; }
+.app-sidebar__footer { display:flex; width:100%; align-items:center; gap:5px; margin-top:auto; padding:18px 0 0; border-top: 1px solid var(--color-border); }
 .user-chip { display:flex; min-width:0; flex:1; align-items:center; gap:10px; }
 .user-chip__body { display:grid; min-width:0; }
 .user-chip strong,.user-chip small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -26,7 +36,10 @@
 .user-chip small { margin-top:2px; color:var(--color-text-tertiary); font-size:10px; }
 .app-topbar { position:relative; z-index:20; height:var(--app-header-height); display:flex; align-items:center; justify-content:space-between; gap:16px; padding:0 24px; border-bottom:1px solid var(--color-border); background:var(--color-canvas); }
 .app-breadcrumb,.app-topbar__actions { display:flex; align-items:center; gap:12px; font-size:11px; }
-.app-breadcrumb { color:var(--color-text-tertiary); }
+.app-breadcrumb { min-width:0; color:var(--color-text-tertiary); }
+.app-breadcrumb__step { display:flex; min-width:0; align-items:center; gap:12px; }
+.app-breadcrumb__step > :first-child,.app-breadcrumb strong { min-width:0; max-width:24ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.app-breadcrumb__step > svg { flex:none; }
 .app-breadcrumb strong { color:var(--color-text-secondary); font-weight:500; }
 .environment-label { display:flex; align-items:center; gap:7px; padding:5px 9px; border:1px solid var(--color-border); border-radius:5px; font-size:10px; color:var(--color-text-secondary); }
 
@@ -72,9 +85,15 @@
 .settings-topline,.admin-topline { position:sticky; top:-1px; z-index:5; background:var(--tl-bg); }
 @media(max-width:700px) { .app-main:has([data-immersive]) { padding:12px 16px; } }
 @media print { .app-sidebar,.app-topbar,.mobile-header,.offline-banner { display:none; }.app-frame { display:block; height:auto; overflow:visible; padding:0; }.app-main { height:auto; overflow:visible !important; padding:0; width:100%; } }
-.app-preferences{display:inline-flex;align-items:center;gap:3px}.app-preferences__trigger{width:34px;height:34px;min-width:34px;padding:5px}.app-preferences__flag{display:block;width:21px;height:21px;border-radius:2px;object-fit:contain;box-shadow:0 0 0 1px var(--color-border)}.app-preferences__option{display:inline-flex;align-items:center;gap:9px;min-width:120px}.app-preferences__option img{width:20px;height:20px;border-radius:2px;object-fit:contain}.app-preferences__option small{margin-left:auto;color:var(--color-text-tertiary);font-size:10px}
+.app-preferences{display:inline-flex;align-items:center;gap:3px}.app-preferences__trigger{width:34px;height:34px;min-width:34px;padding:5px}.app-preferences__flag{display:block;width:21px;height:21px;border-radius:50%;object-fit:contain}
 @media(max-width:820px){.mobile-header>.app-preferences{flex:none}.mobile-header__context{margin-right:auto}.mobile-header__context strong{max-width:28vw}.mobile-header{gap:4px;padding-inline:8px}}
 .guest-shell__actions{display:flex;align-items:center;gap:14px}.guest-shell__actions>a{font-size:12px;color:var(--color-text-secondary);white-space:nowrap}.guest-shell__actions>a:hover{color:var(--color-text);text-decoration:underline}
 @media(max-width:600px){.guest-shell__actions{gap:6px}.guest-shell__actions .app-preferences__trigger{width:30px;min-width:30px}}
 
 .interface-language-field{justify-self:start;min-width:205px}.interface-language-field .tl-button__label{display:flex;align-items:center;gap:9px;width:100%}.interface-language-field .tl-button__label>svg{margin-left:auto}
+/* Toasts come in at the top right, just under the top bar: the viewport is
+ * outside the frame, so it reads the bar's height from the root. */
+:root { --app-header-height:64px; }
+@media(max-width:820px) { :root { --app-header-height:calc(56px + env(safe-area-inset-top)); } }
+body:has(.app-frame) .tl-toast-viewport[data-placement^='top'] { inset-block-start:var(--app-header-height); padding-block-start:12px; }
+body:has(.app-frame [data-immersive]) .tl-toast-viewport[data-placement^='top'] { inset-block-start:0; }

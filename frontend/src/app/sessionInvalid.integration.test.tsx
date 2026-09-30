@@ -25,7 +25,7 @@ describe('expired feature session handling', () => {
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/auth/me')) return Promise.resolve(jsonResponse(authenticated))
-      if (url.endsWith('/sessions?limit=200')) return Promise.resolve(jsonResponse({ error: { code: 'SESSION_EXPIRED', message: 'Sign in again.' } }, 401))
+      if (url.endsWith('/workspaces') || url.endsWith('/sessions?limit=200')) return Promise.resolve(jsonResponse({ error: { code: 'SESSION_EXPIRED', message: 'Sign in again.' } }, 401))
       if (url.endsWith('/settings')) return Promise.resolve(jsonResponse({
         defaultSourceLanguage: 'en', defaultTargetLanguage: 'fr', autoStartMicrophone: false,
         showPartialTranscripts: true, compactTranscriptLayout: false,

@@ -31,7 +31,7 @@ export function releaseReveals() {
  * Items already on screen enter at once, in document order; items below the
  * fold wait, unseen, and make the same entrance when they are scrolled to;
  * items added later — another batch, a new filter — are picked up the same
- * way. Every entrance is queued behind the one before it, so the order holds
+ * way, and so is an item whose `data-tl-reveal` is set back to empty. Every entrance is queued behind the one before it, so the order holds
  * across batches and scrolls, while no item ever waits longer than
  * REVEAL_MAX_WAIT for its turn.
  *
@@ -81,9 +81,19 @@ export function useRevealOnView(root: RefObject<HTMLElement | null>) {
       item.dataset.tlReveal = 'pending'
       observer.observe(item)
     }
+    // Items still waiting from an earlier run of this effect (a remount, a
+    // new root) wait on this observer now.
+    container.querySelectorAll<HTMLElement>('[data-tl-reveal="pending"]').forEach((item) => observer.observe(item))
     container.querySelectorAll(SELECTOR).forEach(track)
+    // Items added later are picked up; so is an item whose mark is set back
+    // to empty, which asks for a fresh entrance (useFlip does this for an
+    // item brought into view by a rearrangement).
     const additions = new MutationObserver((records) => {
       for (const record of records) {
+        if (record.type === 'attributes') {
+          if (record.target instanceof HTMLElement && record.target.dataset.tlReveal === '') track(record.target)
+          continue
+        }
         record.addedNodes.forEach((node) => {
           if (!(node instanceof Element)) return
           if (node.matches(SELECTOR)) track(node)
@@ -91,7 +101,7 @@ export function useRevealOnView(root: RefObject<HTMLElement | null>) {
         })
       }
     })
-    additions.observe(container, { childList: true, subtree: true })
+    additions.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tl-reveal'] })
 
     // Released: look again at everything still waiting, which reports what
     // is in view afresh.

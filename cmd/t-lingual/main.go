@@ -21,6 +21,7 @@ import (
 	"github.com/Tularity/t-lingual/internal/control"
 	"github.com/Tularity/t-lingual/internal/live"
 	"github.com/Tularity/t-lingual/internal/media"
+	"github.com/Tularity/t-lingual/internal/operations"
 	"github.com/Tularity/t-lingual/internal/processlock"
 	"github.com/Tularity/t-lingual/internal/providers"
 	"github.com/Tularity/t-lingual/internal/rooms"
@@ -35,6 +36,13 @@ import (
 var version = "development"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		if err := healthcheck(listenAddress()); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := run(logger); err != nil {
 		logger.Error("t-lingual stopped", "error", err)
@@ -127,6 +135,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if settings, err := database.GetSiteSettings(context.Background()); err == nil {
+		liveService.SetDraftTranslationInterval(time.Duration(settings.DraftTranslationIntervalMS) * time.Millisecond)
+	} else {
+		return fmt.Errorf("read site settings: %w", err)
+	}
 	snapshot := registry.Snapshot()
 	asrProvider, translationProvider := snapshot.ASR, snapshot.Translator
 	rootContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -135,10 +148,21 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	// The monitor samples recognition, translation and the GPU for the
+	// operations page, and tells recording and background filling whether
+	// the providers have room.
+	monitor := operations.New(registry, operations.FindGPUCommand(), operations.DefaultInterval, logger)
+	monitor.SetActivity(func() operations.Activity {
+		recordings, watchers, rooms := liveService.Activity()
+		return operations.Activity{Recordings: recordings, Watchers: watchers, Rooms: rooms}
+	})
+	liveService.SetHealth(monitor)
+
 	applicationAPI, err := api.New(api.Dependencies{
 		Config: cfg, Store: database, Auth: authService, Admin: adminService,
 		Workspace: workspaceService, ASR: asrProvider, Translator: translationProvider,
 		Live: liveService, Media: mediaService, Logger: logger, Providers: registry, Rooms: liveService, Sharing: sharingService,
+		Operations: monitor,
 	})
 	if err != nil {
 		return err
@@ -175,6 +199,7 @@ func run(logger *slog.Logger) error {
 		httpDone <- httpServer.Serve(listener)
 	}()
 	go maintain(rootContext, database, logger)
+	go monitor.Run(rootContext)
 
 	logger.Info("t-lingual started",
 		"version", version,

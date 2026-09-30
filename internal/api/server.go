@@ -16,6 +16,7 @@ import (
 	"github.com/Tularity/t-lingual/internal/domain"
 	"github.com/Tularity/t-lingual/internal/language"
 	"github.com/Tularity/t-lingual/internal/media"
+	"github.com/Tularity/t-lingual/internal/operations"
 	"github.com/Tularity/t-lingual/internal/providers"
 	"github.com/Tularity/t-lingual/internal/rooms"
 	"github.com/Tularity/t-lingual/internal/sharing"
@@ -45,9 +46,13 @@ type Dependencies struct {
 	Providers  *providers.Registry
 	Rooms      *rooms.Service
 	Sharing    *sharing.Service
+	// Operations, when set, is the monitor behind the administrators'
+	// operations page.
+	Operations *operations.Collector
 }
 
 type API struct {
+	operations                 *operations.Collector
 	media                      *media.Manager
 	mediaAdmission             mediaAdmission
 	providers                  *providers.Registry
@@ -88,6 +93,7 @@ func New(dependencies Dependencies) (*API, error) {
 	}
 	return &API{
 		media: dependencies.Media, providers: dependencies.Providers, rooms: dependencies.Rooms, sharing: dependencies.Sharing,
+		operations:             dependencies.Operations,
 		config:                 dependencies.Config,
 		store:                  dependencies.Store,
 		auth:                   dependencies.Auth,
@@ -147,6 +153,18 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/sessions/{sessionID}/archive", a.authenticated(a.archiveSession))
 	mux.HandleFunc("DELETE /api/v1/sessions/{sessionID}/archive", a.authenticated(a.unarchiveSession))
 	mux.HandleFunc("GET /api/v1/sessions/{sessionID}/segments", a.authenticated(a.listSegments))
+	mux.HandleFunc("PUT /api/v1/sessions/{sessionID}/workspace", a.authenticated(a.moveSession))
+
+	mux.HandleFunc("PATCH /api/v1/account/profile", a.authenticated(a.updateProfile))
+	mux.HandleFunc("PUT /api/v1/account/avatar", a.authenticated(a.setAvatar))
+	mux.HandleFunc("DELETE /api/v1/account/avatar", a.authenticated(a.removeAvatar))
+	mux.HandleFunc("GET /api/v1/users/{userID}/avatar", a.authenticated(a.userAvatar))
+	mux.HandleFunc("GET /api/v1/workspaces", a.authenticated(a.listWorkspaces))
+	mux.HandleFunc("POST /api/v1/workspaces", a.authenticated(a.createWorkspace))
+	mux.HandleFunc("PATCH /api/v1/workspaces/{workspaceID}", a.authenticated(a.updateWorkspace))
+	mux.HandleFunc("DELETE /api/v1/workspaces/{workspaceID}", a.authenticated(a.deleteWorkspace))
+	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/use", a.authenticated(a.useWorkspace))
+	mux.HandleFunc("PUT /api/v1/workspaces/{workspaceID}/pinned", a.authenticated(a.pinWorkspace))
 	mux.HandleFunc("GET /api/v1/sessions/{sessionID}/live", a.authenticatedLive(a.serveLive))
 
 	mux.HandleFunc("GET /api/v1/settings", a.authenticated(a.getSettings))
@@ -163,6 +181,20 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/users", a.authenticated(a.listUsers))
 	mux.HandleFunc("PATCH /api/v1/admin/users/{userID}", a.authenticated(a.updateUser))
 	mux.HandleFunc("GET /api/v1/admin/audit", a.authenticated(a.listAudit))
+	mux.HandleFunc("GET /api/v1/admin/users/{userID}", a.authenticated(a.adminUserDetail))
+	mux.HandleFunc("DELETE /api/v1/admin/users/{userID}", a.authenticated(a.deleteUserAsAdmin))
+	mux.HandleFunc("PUT /api/v1/admin/users/{userID}/limits", a.authenticated(a.setUserLimits))
+	mux.HandleFunc("PATCH /api/v1/admin/users/{userID}/profile", a.authenticated(a.updateUserProfileAsAdmin))
+	mux.HandleFunc("PUT /api/v1/admin/users/{userID}/settings", a.authenticated(a.updateUserSettingsAsAdmin))
+	mux.HandleFunc("GET /api/v1/admin/users/{userID}/security", a.authenticated(a.adminUserSecurity))
+	mux.HandleFunc("DELETE /api/v1/admin/users/{userID}/passkeys/{credentialID}", a.authenticated(a.deleteUserPasskeyAsAdmin))
+	mux.HandleFunc("DELETE /api/v1/admin/users/{userID}/sessions/{browserSessionID}", a.authenticated(a.revokeUserSessionAsAdmin))
+	mux.HandleFunc("GET /api/v1/admin/limits", a.authenticated(a.adminDefaultLimits))
+	mux.HandleFunc("PUT /api/v1/admin/limits", a.authenticated(a.setAdminDefaultLimits))
+	mux.HandleFunc("GET /api/v1/admin/usage", a.authenticated(a.adminUsage))
+	mux.HandleFunc("GET /api/v1/admin/operations", a.authenticated(a.adminOperations))
+	mux.HandleFunc("GET /api/v1/account/usage", a.authenticated(a.accountUsage))
+	mux.HandleFunc("GET /api/v1/account/storage", a.authenticated(a.accountStorage))
 
 	if a.sharing != nil && a.rooms != nil {
 		mux.HandleFunc("GET /api/v1/view/sessions", a.viewing(a.listViewedSessions, false))
@@ -173,12 +205,15 @@ func (a *API) Handler() http.Handler {
 		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/events", a.viewing(a.watchSession, true))
 		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/record", a.viewing(a.recordSession, true))
 		mux.HandleFunc("POST /api/v1/view/sessions/{sessionID}/recording/stop", a.viewing(a.stopRecorder, false))
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/recording-admission", a.viewing(a.recordingAdmission, false))
+		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/people/{userID}/avatar", a.viewing(a.sessionPersonAvatar, false))
 		mux.HandleFunc("GET /api/v1/sessions/{sessionID}/shares", a.authenticated(a.listShares))
 		mux.HandleFunc("POST /api/v1/sessions/{sessionID}/shares", a.authenticated(a.createShare))
 		mux.HandleFunc("PATCH /api/v1/sessions/{sessionID}/shares/{shareID}", a.authenticated(a.updateShare))
 		mux.HandleFunc("DELETE /api/v1/sessions/{sessionID}/shares/{shareID}", a.authenticated(a.revokeShare))
 		mux.HandleFunc("GET /api/v1/share-recipients", a.authenticated(a.shareRecipients))
 		mux.HandleFunc("POST /api/v1/share-access", a.public(a.redeemShare))
+		mux.HandleFunc("POST /api/v1/share-membership", a.authenticated(a.joinShare))
 	}
 	if a.media != nil && a.sharing != nil && a.rooms != nil {
 		mux.HandleFunc("GET /api/v1/view/sessions/{sessionID}/audio", a.viewing(a.listAudio, false))

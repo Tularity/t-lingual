@@ -20,16 +20,15 @@ import (
 )
 
 const (
-	watchTailLimit        = 40
-	watchQueueLimit       = 64
-	watchRevalidateEvery  = 10 * time.Second
-	watchHeartbeatEvery   = 15 * time.Second
-	watchWriteTimeout     = 5 * time.Second
-	maxGlobalWatchers     = 2048
-	maxRoomWatchers       = 256
-	maxViewerWatchers     = 8
-	maxRecordings         = 64
-	maxPerOwnerRecordings = 2
+	watchTailLimit       = 40
+	watchQueueLimit      = 64
+	watchRevalidateEvery = 10 * time.Second
+	watchHeartbeatEvery  = 15 * time.Second
+	watchWriteTimeout    = 5 * time.Second
+	maxGlobalWatchers    = 2048
+	maxRoomWatchers      = 256
+	maxViewerWatchers    = 8
+	maxRecordings        = 64
 )
 
 var (
@@ -40,6 +39,11 @@ var (
 	ErrStopped       = errors.New("room recording stopped by owner")
 	ErrNoAudio       = errors.New("room recorder stopped sending audio")
 	ErrWatchCapacity = errors.New("room watcher capacity exhausted")
+	// ErrRecordingLimit: the owner's sessions are already recording as many
+	// times at once as the owner may.
+	ErrRecordingLimit = errors.New("room owner recording limit reached")
+	// ErrRecordingQuota: the owner has used a limit that ends recording.
+	ErrRecordingQuota = errors.New("room owner recording quota used")
 )
 
 type AccessResolver interface {
@@ -73,8 +77,19 @@ type Service struct {
 	draftMu         sync.Mutex
 	drafts          map[translationKey]*draftTranslationState
 	draftSlots      chan struct{}
-	draftWG         sync.WaitGroup
-	noAudioTimeout  time.Duration
+	// draftInterval is the least time from one draft translation request to
+	// the next for the same line, in nanoseconds.
+	draftInterval  atomic.Int64
+	draftWG        sync.WaitGroup
+	noAudioTimeout time.Duration
+	// reattachGrace is how long a recording whose connection dropped waits
+	// for its browser to come back and go on with the same run. Zero ends
+	// the run with its connection.
+	reattachGrace time.Duration
+	// health, when set, is the monitor's word on the providers; without it
+	// they are asked directly.
+	health  providers.HealthSource
+	gapWake chan struct{}
 }
 
 type room struct {
@@ -84,11 +99,12 @@ type room struct {
 }
 
 type watcher struct {
-	id     uint64
-	viewer domain.Viewer
-	access domain.SessionAccess
-	queue  chan roomEvent
-	cancel context.CancelFunc
+	id       uint64
+	viewer   domain.Viewer
+	access   domain.SessionAccess
+	queue    chan roomEvent
+	presence chan struct{}
+	cancel   context.CancelFunc
 }
 
 type roomEvent struct {
@@ -97,17 +113,42 @@ type roomEvent struct {
 }
 
 type recordLease struct {
-	id       uint64
-	viewer   domain.Viewer
-	access   domain.SessionAccess
-	ctx      context.Context
-	cancel   context.CancelCauseFunc
-	done     chan struct{}
-	provider providers.Snapshot
-	conn     *websocket.Conn
-	writeMu  sync.Mutex
-	room     *room
-	claimed  bool
+	id uint64
+	// recognitionPaused: recognition is unavailable; the audio is still saved.
+	recognitionPaused atomic.Bool
+	// recognitionCatchingUp: recognition was paused for audio that waited,
+	// not because it went away.
+	recognitionCatchingUp atomic.Bool
+	viewer                domain.Viewer
+	access                domain.SessionAccess
+	ctx                   context.Context
+	cancel                context.CancelCauseFunc
+	done                  chan struct{}
+	provider              providers.Snapshot
+	conn                  *websocket.Conn
+	writeMu               sync.Mutex
+	room                  *room
+	claimed               bool
+	// sampleRate is the recording's audio rate: a connection that comes back
+	// to the run must send the same.
+	sampleRate int
+	// attach hands the run a returning recorder's new connection.
+	attach chan recordAttachment
+	// detached: the run's connection dropped and it waits for the recorder.
+	detached atomic.Bool
+	// looping: the run is recording and can take a returning connection.
+	looping atomic.Bool
+	// closed is closed once the run has said its last word to its connection.
+	closed chan struct{}
+}
+
+// recordAttachment is a returning recorder's new connection to a run in
+// progress. done is closed when the run has let go of it.
+type recordAttachment struct {
+	conn  *websocket.Conn
+	hello audioHello
+	agent string
+	done  chan struct{}
 }
 
 type RecordingState struct {
@@ -115,6 +156,13 @@ type RecordingState struct {
 	HolderID   string `json:"holderId,omitempty"`
 	HolderName string `json:"holderName,omitempty"`
 	IsMine     bool   `json:"isMine"`
+	// RecognitionPaused: recognition dropped out; recording goes on and the
+	// missed stretch is recognized once it is back.
+	RecognitionPaused bool `json:"recognitionPaused,omitempty"`
+	// RecognitionCatchingUp: recognition is well, and paused only while audio
+	// that waited, as through a dropped connection, is saved to be recognized
+	// in its place.
+	RecognitionCatchingUp bool `json:"recognitionCatchingUp,omitempty"`
 }
 
 // New accepts the sharing service through its narrow Resolve contract so room
@@ -133,15 +181,64 @@ func newService(database *store.Store, sharing AccessResolver, registry provider
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{store: database, access: sharing, providers: registry, logger: logger,
 		ctx: ctx, cancel: cancel, rooms: make(map[string]*room), jobs: make(chan translationTask, 64),
-		inFlight: make(map[translationKey]struct{}), noAudioTimeout: noAudioDeadline,
+		inFlight: make(map[translationKey]struct{}), noAudioTimeout: noAudioDeadline, reattachGrace: reattachDeadline,
 		watchesByViewer: make(map[string]int), progress: make(map[translationKey]translationProgress)}
 	s.drafts = make(map[translationKey]*draftTranslationState)
 	s.draftSlots = make(chan struct{}, 4)
+	s.draftInterval.Store(int64(defaultDraftInterval))
+	s.gapWake = make(chan struct{}, 1)
 	for range 4 {
 		s.workers.Add(1)
 		go s.translationWorker()
 	}
+	s.workers.Add(2)
+	go s.gapWorker()
+	go s.translationRetryWorker()
 	return s, nil
+}
+
+// SetHealth has the service consult a monitor's view of the providers.
+func (s *Service) SetHealth(source providers.HealthSource) {
+	s.mu.Lock()
+	s.health = source
+	s.mu.Unlock()
+}
+
+func (s *Service) healthSource() providers.HealthSource {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.health
+}
+
+// RecognitionAvailable says whether a recording could start now. The
+// monitor's latest sample decides when there is one; otherwise the provider
+// is asked.
+func (s *Service) RecognitionAvailable(ctx context.Context) bool {
+	provider := s.providers.Snapshot().ASR
+	if provider == nil {
+		return false
+	}
+	if source := s.healthSource(); source != nil {
+		if health := source.ASRHealth(); health.Known {
+			return health.Ready && health.CanAccept
+		}
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return provider.Ready(checkCtx) == nil
+}
+
+// Activity is this service's share of the providers' load: recordings in
+// progress, open watches and the rooms holding them.
+func (s *Service) Activity() (recordings, watchers, rooms int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, room := range s.rooms {
+		if room.recorder != nil {
+			recordings++
+		}
+	}
+	return recordings, s.watchCount, len(s.rooms)
 }
 
 func (s *Service) roomLocked(sessionID string) *room {
@@ -160,7 +257,8 @@ func (s *Service) stateLocked(sessionID string, viewer domain.Viewer) RecordingS
 	}
 	lease := current.recorder
 	return RecordingState{Active: true, HolderID: lease.viewer.ID,
-		HolderName: lease.viewer.DisplayName, IsMine: lease.viewer.ID == viewer.ID}
+		HolderName: lease.viewer.DisplayName, IsMine: lease.viewer.ID == viewer.ID,
+		RecognitionPaused: lease.recognitionPaused.Load(), RecognitionCatchingUp: lease.recognitionPaused.Load() && lease.recognitionCatchingUp.Load()}
 }
 
 // State is an in-memory activity projection. Absence never implies that a
@@ -209,6 +307,8 @@ func (s *Service) releaseWatch(sessionID string, current *watcher) {
 		}
 		if room.recorder == nil && len(room.watches) == 0 {
 			delete(s.rooms, sessionID)
+		} else {
+			s.broadcastPresenceLocked(sessionID)
 		}
 	}
 }
@@ -230,6 +330,7 @@ func (s *Service) registerWatch(sessionID string, current *watcher) (RecordingSt
 	room.watches[current.id] = current
 	s.watchCount++
 	s.watchesByViewer[current.viewer.ID]++
+	s.broadcastPresenceLocked(sessionID)
 	return s.stateLocked(sessionID, current.viewer), nil
 }
 
@@ -267,6 +368,8 @@ func (s *Service) broadcastRecording(sessionID string) {
 			watch.cancel()
 		}
 	}
+	// Who is recording is part of who is here.
+	s.broadcastPresenceLocked(sessionID)
 }
 
 func sendSSE(w http.ResponseWriter, value any) error {
@@ -316,7 +419,7 @@ func (s *Service) ServeWatch(w http.ResponseWriter, r *http.Request, viewer doma
 	ctx, cancel := context.WithCancel(r.Context())
 	viewer = access.Viewer
 	current := &watcher{id: s.nextID.Add(1), viewer: viewer, access: access,
-		queue: make(chan roomEvent, watchQueueLimit), cancel: cancel}
+		queue: make(chan roomEvent, watchQueueLimit), presence: make(chan struct{}, 1), cancel: cancel}
 	state, err := s.registerWatch(sessionID, current)
 	if err != nil {
 		cancel()
@@ -337,11 +440,15 @@ func (s *Service) ServeWatch(w http.ResponseWriter, r *http.Request, viewer doma
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("X-Accel-Buffering", "no")
-	if err := sendSSE(w, map[string]any{"type": "snapshot", "session": projectedSession,
+	gaps, err := s.store.ListRecognitionGaps(ctx, access.Session.UserID, sessionID)
+	if err != nil {
+		return err
+	}
+	if err := sendSSE(w, map[string]any{"type": "snapshot", "session": projectedSession, "recognitionGaps": gaps,
 		"segments": segments, "access": map[string]any{
 			"viewerId": viewer.ID, "displayName": viewer.DisplayName, "isOwner": access.IsOwner,
 			"permission": access.Permission, "targetLanguage": access.TargetLanguage,
-		}, "recording": state, "targetLanguage": access.TargetLanguage}); err != nil {
+		}, "recording": state, "presence": s.Presence(sessionID, viewer), "targetLanguage": access.TargetLanguage}); err != nil {
 		return nil
 	}
 	recheck := time.NewTicker(watchRevalidateEvery)
@@ -354,6 +461,10 @@ func (s *Service) ServeWatch(w http.ResponseWriter, r *http.Request, viewer doma
 			return nil
 		case event := <-current.queue:
 			if err := sendSSE(w, event.data); err != nil {
+				return nil
+			}
+		case <-current.presence:
+			if err := sendSSE(w, map[string]any{"type": "presence", "presence": s.Presence(sessionID, viewer)}); err != nil {
 				return nil
 			}
 		case <-heartbeat.C:
@@ -464,6 +575,31 @@ func (s *Service) StopRecorder(ctx context.Context, viewer domain.Viewer, sessio
 	}
 }
 
+// EndOwnerRecordings stops every recording of one owner's sessions, whoever
+// is recording, and waits for each to end, as before the owner's account is
+// deleted.
+func (s *Service) EndOwnerRecordings(ctx context.Context, ownerID string) error {
+	s.mu.Lock()
+	var leases []*recordLease
+	for _, room := range s.rooms {
+		if room.recorder != nil && room.recorder.access.Session.UserID == ownerID {
+			leases = append(leases, room.recorder)
+		}
+	}
+	s.mu.Unlock()
+	for _, lease := range leases {
+		lease.cancel(ErrStopped)
+	}
+	for _, lease := range leases {
+		select {
+		case <-lease.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
 func (s *Service) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	s.closing = true
@@ -485,4 +621,37 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// OwnerRecordings is how many of one owner's sessions are recording now.
+func (s *Service) OwnerRecordings(ownerID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for _, room := range s.rooms {
+		if room.recorder != nil && room.recorder.access.Session.UserID == ownerID {
+			count++
+		}
+	}
+	return count
+}
+
+// ownerRecordingsFor counts the owner's recordings as a start by viewer
+// would: runs of the viewer's own browser that wait for it do not count.
+func (s *Service) ownerRecordingsFor(ownerID string, viewer domain.Viewer) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for _, room := range s.rooms {
+		if lease := room.recorder; lease != nil && lease.access.Session.UserID == ownerID &&
+			!(lease.detached.Load() && sameRecorder(lease.viewer, viewer)) {
+			count++
+		}
+	}
+	return count
+}
+
+// Gaps is one session's recognition gaps, for readers of its transcript.
+func (s *Service) Gaps(ctx context.Context, access domain.SessionAccess) ([]domain.RecognitionGap, error) {
+	return s.store.ListRecognitionGaps(ctx, access.Session.UserID, access.Session.ID)
 }

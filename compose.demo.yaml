@@ -8,6 +8,19 @@ services:
       network: host
     ports:
       - "127.0.0.1:5181:5173"
+      # Other devices on the network: HTTPS, with a self-signed certificate
+      # kept outside the repository (data/demo-tls/cert.pem and key.pem).
+      - "0.0.0.0:5182:5174"
+    environment:
+      DEMO_TLS_CERT: /run/demo-tls/cert.pem
+      DEMO_TLS_KEY: /run/demo-tls/key.pem
+      # The monitoring page reads the real services, counts and states only.
+      DEMO_ASR_URL: http://host.docker.internal:8300
+      DEMO_TRANSLATOR_URL: http://host.docker.internal:8083
+    # nvidia-smi for the monitoring page's GPU readings.
+    gpus: all
+    volumes:
+      - ./data/demo-tls:/run/demo-tls:ro
     init: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

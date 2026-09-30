@@ -13,7 +13,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
       <RouterProvider>
-        <ToastProvider>
+        <ToastProvider placement="top-end">
           <ErrorBoundary><AuthProvider><I18nProvider><App /></I18nProvider></AuthProvider></ErrorBoundary>
         </ToastProvider>
       </RouterProvider>

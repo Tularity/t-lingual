@@ -7,6 +7,7 @@ import (
 	"github.com/Tularity/t-lingual/internal/admin"
 	"github.com/Tularity/t-lingual/internal/auth"
 	"github.com/Tularity/t-lingual/internal/live"
+	"github.com/Tularity/t-lingual/internal/profile"
 	"github.com/Tularity/t-lingual/internal/rooms"
 	"github.com/Tularity/t-lingual/internal/sharing"
 	"github.com/Tularity/t-lingual/internal/store"
@@ -48,6 +49,18 @@ func (a *API) mapError(err error) error {
 		return webapi.Conflict("SESSION_LIVE", "Stop the live interpretation before changing or deleting it.")
 	case errors.Is(err, workspace.ErrSessionArchived), errors.Is(err, store.ErrArchived):
 		return webapi.Conflict("SESSION_ARCHIVED", "Unarchive this session before editing or recording again.")
+	case errors.Is(err, store.ErrWorkspaceNotEmpty):
+		return webapi.Conflict("WORKSPACE_NOT_EMPTY", "Choose another workspace to move this workspace's sessions to.")
+	case errors.Is(err, store.ErrLastWorkspace):
+		return webapi.Conflict("LAST_WORKSPACE", "Keep at least one workspace.")
+	case errors.Is(err, workspace.ErrWorkspaceLimit):
+		return webapi.Conflict("WORKSPACE_LIMIT", "This account has reached the workspace limit.")
+	case errors.Is(err, profile.ErrInvalidName):
+		return &webapi.Error{Status: http.StatusUnprocessableEntity, Code: "INVALID_DISPLAY_NAME", Message: "Use a name of up to 80 characters."}
+	case errors.Is(err, profile.ErrInvalidImage):
+		return &webapi.Error{Status: http.StatusUnprocessableEntity, Code: "INVALID_IMAGE", Message: "Use a PNG or JPEG picture between 16 and 1024 pixels across."}
+	case errors.Is(err, workspace.ErrInvalidWorkspace):
+		return &webapi.Error{Status: http.StatusUnprocessableEntity, Code: "INVALID_WORKSPACE", Message: "Give the workspace a name of up to 60 characters."}
 	case errors.Is(err, workspace.ErrQuota):
 		return &webapi.Error{Status: http.StatusInsufficientStorage, Code: "STORAGE_LIMIT", Message: "This account has reached its workspace storage limit. Delete older sessions and try again."}
 	case errors.Is(err, live.ErrGlobalCapacity):
@@ -62,6 +75,10 @@ func (a *API) mapError(err error) error {
 		return &webapi.Error{Status: http.StatusTooManyRequests, Code: "VIEWER_CAPACITY", Message: "Too many active viewing connections. Close another session tab and try again."}
 	case errors.Is(err, rooms.ErrOccupied):
 		return webapi.Conflict("RECORDING_OCCUPIED", "Another viewer is recording. Only the owner can take over.")
+	case errors.Is(err, sharing.ErrGuestLinksDisabled):
+		return webapi.Forbidden("GUEST_LINKS_DISABLED", "This account can't share with guests. Share with signed-in people instead.")
+	case errors.Is(err, sharing.ErrSignInRequired):
+		return webapi.Forbidden("SIGN_IN_REQUIRED", "Sign in to open this link.")
 	case errors.Is(err, sharing.ErrInvalidInput):
 		return webapi.BadRequest("INVALID_SHARE", "Check the language, recipient, permission, and expiration.")
 	case errors.Is(err, store.ErrConflict):

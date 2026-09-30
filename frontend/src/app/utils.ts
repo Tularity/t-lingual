@@ -82,3 +82,13 @@ export function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message
   return 'Something went wrong. Please try again.'
 }
+
+/** How long ago `timestamp` was, briefly: 'Just now' (an interface string to translate) under a minute, then minutes, hours and days in `locale`. */
+export function relativeTime(timestamp: string, now: number, locale = 'en') {
+  const seconds = Math.max(0, Math.floor((now - new Date(timestamp).getTime()) / 1000))
+  if (seconds < 60) return 'Just now'
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: 'short' })
+  if (seconds < 3600) return format.format(-Math.floor(seconds / 60), 'minute')
+  if (seconds < 86400) return format.format(-Math.floor(seconds / 3600), 'hour')
+  return format.format(-Math.floor(seconds / 86400), 'day')
+}

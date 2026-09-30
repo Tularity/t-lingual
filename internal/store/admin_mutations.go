@@ -345,7 +345,7 @@ func (s *Store) updateUserWithAudit(
 	}
 
 	updated, err := scanUser(tx.QueryRowContext(ctx, `
-		SELECT id, webauthn_id, username, display_name, role, status, created_at, updated_at
+		SELECT `+userColumns+`
 		FROM users WHERE id = ?`, userID))
 	if err != nil {
 		return AdminUserUpdateResult{}, fmt.Errorf("store: read updated user: %w", err)

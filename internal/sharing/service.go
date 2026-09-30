@@ -22,7 +22,22 @@ import (
 	"github.com/Tularity/t-lingual/internal/store"
 )
 
-var ErrInvalidInput = errors.New("sharing: invalid input")
+var (
+	ErrInvalidInput = errors.New("sharing: invalid input")
+	// ErrSignInRequired: the link is only for people signed in here.
+	ErrSignInRequired = errors.New("sharing: sign in to use this link")
+	// ErrGuestLinksDisabled: the owner may not share with guests.
+	ErrGuestLinksDisabled = errors.New("sharing: guest links are disabled for this account")
+)
+
+// guestsAllowed: whether an owner may let in people who are not signed in.
+func (s *Service) guestsAllowed(ctx context.Context, ownerID string) (bool, error) {
+	limits, err := s.store.EffectiveLimits(ctx, ownerID)
+	if err != nil {
+		return false, err
+	}
+	return limits.GuestLinks, nil
+}
 
 const guestSessionTTL = 30 * 24 * time.Hour
 
@@ -41,6 +56,7 @@ func New(database *store.Store, keyring *secret.Keyring) (*Service, error) {
 
 type CreateInput struct {
 	Kind            domain.ShareKind       `json:"kind"`
+	Audience        domain.ShareAudience   `json:"audience,omitempty"`
 	Permission      domain.SharePermission `json:"permission"`
 	RecipientUserID string                 `json:"recipientUserId,omitempty"`
 	ExpiresAt       *time.Time             `json:"expiresAt"`
@@ -97,9 +113,27 @@ func validPermission(value domain.SharePermission) bool {
 func (s *Service) Create(ctx context.Context, ownerID, sessionID string, input CreateInput) (CreatedShare, error) {
 	if ownerID == "" || sessionID == "" || !validPermission(input.Permission) ||
 		(input.Kind != domain.ShareUser && input.Kind != domain.ShareLink) ||
-		(input.Kind == domain.ShareUser && (input.RecipientUserID == "" || input.RecipientUserID == ownerID)) ||
+		(input.Kind == domain.ShareUser && (input.RecipientUserID == "" || input.RecipientUserID == ownerID || input.Audience != "")) ||
 		(input.Kind == domain.ShareLink && input.RecipientUserID != "") {
 		return CreatedShare{}, ErrInvalidInput
+	}
+	if input.Kind == domain.ShareLink {
+		switch input.Audience {
+		case "":
+			input.Audience = domain.ShareAnyone
+		case domain.ShareAnyone, domain.ShareMembers:
+		default:
+			return CreatedShare{}, ErrInvalidInput
+		}
+		if input.Audience == domain.ShareAnyone {
+			allowed, err := s.guestsAllowed(ctx, ownerID)
+			if err != nil {
+				return CreatedShare{}, err
+			}
+			if !allowed {
+				return CreatedShare{}, ErrGuestLinksDisabled
+			}
+		}
 	}
 	now := s.now().UTC()
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(now) {
@@ -111,7 +145,7 @@ func (s *Service) Create(ctx context.Context, ownerID, sessionID string, input C
 	}
 	share := domain.SessionShare{
 		ID: shareID, SessionID: sessionID, OwnerUserID: ownerID,
-		Kind: input.Kind, Permission: input.Permission, CreatedAt: now, ExpiresAt: input.ExpiresAt,
+		Kind: input.Kind, Audience: input.Audience, Permission: input.Permission, CreatedAt: now, ExpiresAt: input.ExpiresAt,
 	}
 	var token string
 	var digest [sha256.Size]byte
@@ -178,6 +212,15 @@ func (s *Service) Redeem(ctx context.Context, linkToken, displayName, targetLang
 	if err != nil {
 		return RedeemedGuest{}, err
 	}
+	if share.Audience != domain.ShareAnyone {
+		return RedeemedGuest{}, ErrSignInRequired
+	}
+	// An owner no longer allowed guests has links only signed-in people open.
+	if allowed, err := s.guestsAllowed(ctx, share.OwnerUserID); err != nil {
+		return RedeemedGuest{}, err
+	} else if !allowed {
+		return RedeemedGuest{}, ErrSignInRequired
+	}
 	displayName = strings.TrimSpace(displayName)
 	if displayName == "" {
 		displayName = "Guest"
@@ -219,6 +262,33 @@ func (s *Service) Redeem(ctx context.Context, linkToken, displayName, targetLang
 	return RedeemedGuest{Guest: guest, Access: access, CookieToken: cookieToken}, nil
 }
 
+// Join lets a signed-in person in through a link: they become one of its
+// members and see the session as themselves, not as a guest, for as long as
+// the link lasts. Opening their own link just leads the owner back to it.
+func (s *Service) Join(ctx context.Context, userID, linkToken string) (string, error) {
+	digest, err := tokenDigest(linkToken)
+	if err != nil {
+		return "", err
+	}
+	now := s.now().UTC()
+	share, err := s.store.FindActiveLinkShare(ctx, digest, now)
+	if err != nil {
+		return "", err
+	}
+	if share.OwnerUserID == userID {
+		return share.SessionID, nil
+	}
+	if err := s.store.JoinLinkShare(ctx, share.ID, userID, now); err != nil {
+		return "", err
+	}
+	return share.SessionID, nil
+}
+
+// Members lists who joined one of the owner's links.
+func (s *Service) Members(ctx context.Context, ownerID, sessionID, shareID string) ([]domain.User, error) {
+	return s.store.ListShareMembers(ctx, ownerID, sessionID, shareID, 100)
+}
+
 func (s *Service) AuthenticateGuest(ctx context.Context, cookieToken string) (domain.Viewer, error) {
 	digest, err := tokenDigest(cookieToken)
 	if err != nil {
@@ -249,6 +319,7 @@ func (s *Service) Resolve(ctx context.Context, viewer domain.Viewer, sessionID s
 		}
 		viewer.ID = "user:" + user.ID
 		viewer.DisplayName = user.DisplayName
+		viewer.AvatarVersion = user.AvatarVersion
 		session, err = s.store.GetInterpretationSession(ctx, user.ID, sessionID)
 		if errors.Is(err, store.ErrNotFound) {
 			share, shareErr := s.store.FindActiveUserShare(ctx, user.ID, sessionID, now)
@@ -279,6 +350,9 @@ func (s *Service) Resolve(ctx context.Context, viewer domain.Viewer, sessionID s
 	} else if viewer.GuestID != "" && viewer.UserID == "" {
 		guest, share, err := s.store.FindActiveGuestSession(ctx, viewer.GuestID, nil, now)
 		if err != nil || guest.SessionID != sessionID {
+			return domain.SessionAccess{}, store.ErrNotFound
+		}
+		if allowed, err := s.guestsAllowed(ctx, share.OwnerUserID); err != nil || !allowed {
 			return domain.SessionAccess{}, store.ErrNotFound
 		}
 		viewer.ID = "guest:" + guest.ID
@@ -316,6 +390,10 @@ func (s *Service) Resolve(ctx context.Context, viewer domain.Viewer, sessionID s
 	if err != nil {
 		return domain.SessionAccess{}, fmt.Errorf("sharing: stored viewer language is invalid: %w", err)
 	}
+	if !isOwner {
+		// Where the owner keeps a session is theirs alone, whoever it is shared with.
+		session.WorkspaceID = ""
+	}
 	return domain.SessionAccess{
 		Session: session, Viewer: viewer, Permission: permission,
 		IsOwner: isOwner, TargetLanguage: target, ShareID: shareID,
@@ -323,8 +401,14 @@ func (s *Service) Resolve(ctx context.Context, viewer domain.Viewer, sessionID s
 }
 
 func (s *Service) ListAccessibleSessions(ctx context.Context, viewer domain.Viewer, limit, offset int) ([]domain.SessionAccess, error) {
+	return s.ListAccessibleSessionsIn(ctx, viewer, store.AccessibleSessionFilter{}, limit, offset)
+}
+
+// ListAccessibleSessionsIn lists what the viewer can see, narrowed to one of
+// their own workspaces or to what others have shared with them.
+func (s *Service) ListAccessibleSessionsIn(ctx context.Context, viewer domain.Viewer, filter store.AccessibleSessionFilter, limit, offset int) ([]domain.SessionAccess, error) {
 	now := s.now().UTC()
-	items, err := s.store.ListAccessibleInterpretationSessions(ctx, viewer, now, limit, offset)
+	items, err := s.store.ListAccessibleInterpretationSessionsFiltered(ctx, viewer, now, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

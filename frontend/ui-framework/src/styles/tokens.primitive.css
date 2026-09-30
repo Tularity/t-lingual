@@ -136,6 +136,11 @@
     --tl-weight-bold:     700;
 
     --tl-leading-none:    1;
+    /* A text line one em tall is shorter than its glyphs: the UI faces reach
+     * about a sixth of an em above and below it. Anything that clips its text
+     * — a label truncating with an ellipsis — clips this much further out,
+     * giving the room back with a negative margin so nothing moves. */
+    --tl-glyph-room:      0.25em;
     --tl-leading-tight:   1.25;
     --tl-leading-snug:    1.375;
     --tl-leading-normal:  1.5;

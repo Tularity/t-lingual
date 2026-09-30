@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
-import { useRef } from 'react'
+import { StrictMode, useRef } from 'react'
 import { REVEAL_STEP, useRevealOnView } from './useRevealOnView'
 
 let observer: { callback: IntersectionObserverCallback; targets: Element[] } | null = null
@@ -65,6 +65,14 @@ describe('useRevealOnView', () => {
     rerender(<List count={2} />)
     await act(async () => {})
     expect(getAllByText(/Item/)[1]).toHaveAttribute('data-tl-reveal', 'pending')
+  })
+
+  it('still brings in items that were waiting when the effect ran again', () => {
+    const { getAllByText } = render(<StrictMode><List count={2} /></StrictMode>)
+    const items = getAllByText(/Item/)
+    expect(observer!.targets).toEqual(expect.arrayContaining(items))
+    intersect(...items)
+    expect(items.map((item) => item.dataset.tlReveal)).toEqual(['shown', 'shown'])
   })
 
   it('hides nothing where items cannot be watched', () => {

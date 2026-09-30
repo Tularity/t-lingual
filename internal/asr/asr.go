@@ -71,6 +71,9 @@ type StartResponse struct {
 	SpeakerEmbedding   string           `json:"speaker_embeddings"`
 }
 
+// Event is one upstream message. For an info event, CutoffMS and Reason
+// describe a degraded auxiliary branch, as when speaker labels stop at
+// CutoffMS of the stream's audio so recognition keeps up.
 type Event struct {
 	Type            string           `json:"type"`
 	Sequence        int64            `json:"seq,omitempty"`
@@ -90,6 +93,8 @@ type Event struct {
 	State           string           `json:"state,omitempty"`
 	AudioClockMS    int64            `json:"asr_t,omitempty"`
 	InfoEvent       string           `json:"event,omitempty"`
+	CutoffMS        int64            `json:"cutoff_ms,omitempty"`
+	Reason          string           `json:"reason,omitempty"`
 	LanguageRegions []LanguageRegion `json:"language_regions,omitempty"`
 }
 

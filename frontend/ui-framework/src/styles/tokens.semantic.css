@@ -135,6 +135,25 @@
     --tl-focus-width:  2px;
     --tl-focus-offset: 1px;
 
+    /* -- Charts --------------------------------------------------------------
+     * Eight series colours, led by the brand amber and spaced around the hue
+     * circle so neighbouring series never share a family. Mid lightness, so
+     * a thin line reads on the cream page and a filled bar still carries a
+     * dark label beside it. Colour is never a chart's only key: every series
+     * is also named in its legend and its tooltip. */
+    --tl-chart-1: oklch(72% 0.150 70);
+    --tl-chart-2: oklch(60% 0.095 192);
+    --tl-chart-3: oklch(57% 0.130 262);
+    --tl-chart-4: oklch(63% 0.150 18);
+    --tl-chart-5: oklch(63% 0.120 140);
+    --tl-chart-6: oklch(55% 0.110 322);
+    --tl-chart-7: oklch(56% 0.055 58);
+    --tl-chart-8: oklch(72% 0.085 228);
+    --tl-chart-grid: var(--tl-sand-200);
+    --tl-chart-axis: var(--tl-text-muted);
+    /* The remainder beside a measured part: pauses beside speech, say. */
+    --tl-chart-rest: var(--tl-sand-300);
+
     /* -- Component surfaces ------------------------------------------------- */
     --tl-field-bg:          var(--tl-sand-0);
     --tl-field-border:      var(--tl-sand-300);
@@ -224,6 +243,18 @@
     /* Light amber, not amber-800: on a near-black page the dark ring is the
      * one that vanishes. */
     --tl-focus-ring: oklch(84% 0.130 78);
+
+    --tl-chart-1: oklch(76% 0.135 72);
+    --tl-chart-2: oklch(72% 0.085 192);
+    --tl-chart-3: oklch(70% 0.110 262);
+    --tl-chart-4: oklch(71% 0.130 18);
+    --tl-chart-5: oklch(73% 0.110 140);
+    --tl-chart-6: oklch(70% 0.100 322);
+    --tl-chart-7: oklch(68% 0.050 58);
+    --tl-chart-8: oklch(78% 0.075 228);
+    --tl-chart-grid: var(--tl-sand-850);
+    --tl-chart-axis: var(--tl-text-muted);
+    --tl-chart-rest: var(--tl-sand-700);
 
     --tl-field-bg:           var(--tl-sand-925);
     --tl-field-border:       var(--tl-sand-800);

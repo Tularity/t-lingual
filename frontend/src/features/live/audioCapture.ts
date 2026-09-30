@@ -11,6 +11,21 @@ export function microphoneConstraints(preferences: LocalPreferences): MediaTrack
   }
 }
 
+/**
+ * Narrows the worklet's float samples to little-endian 16-bit, as they are
+ * sent: half the bandwidth, and nothing a voice loses. The server widens
+ * them again.
+ */
+export function toPcm16(samples: ArrayBuffer): ArrayBuffer {
+  const input = new Float32Array(samples)
+  const output = new Int16Array(input.length)
+  for (let index = 0; index < input.length; index++) {
+    const value = Math.max(-1, Math.min(1, input[index] || 0))
+    output[index] = Math.round(value < 0 ? value * 32768 : value * 32767)
+  }
+  return output.buffer
+}
+
 /** Connects microphone DSP to the native-rate worklet. No playback is audible. */
 export function connectMicrophoneCapture(context: AudioContext, stream: MediaStream, worklet: AudioWorkletNode, preferences: LocalPreferences) {
   const source = context.createMediaStreamSource(stream)

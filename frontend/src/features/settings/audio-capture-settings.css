@@ -1,21 +1,30 @@
-.audio-capture-settings {
-  min-width: 0;
-  margin: 0;
-  padding: 16px;
-  border: 1px solid var(--tl-overlay-border);
-  border-radius: 14px;
-}
-.audio-capture-settings legend { padding: 0 6px; font-weight: 700; }
-.audio-capture-settings__modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.audio-capture-settings__modes label { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--tl-overlay-border); border-radius: 12px; cursor: pointer; }
-.audio-capture-settings__modes label[data-selected] { border-color: var(--tl-accent); background: var(--tl-surface-elevated); }
-.audio-capture-settings__modes input { margin-top: 3px; accent-color: var(--tl-accent); }
-.audio-capture-settings__modes span { display: grid; gap: 4px; }
-.audio-capture-settings__modes small, .audio-capture-settings__gain p, .audio-capture-settings__note { color: var(--tl-text-muted); line-height: 1.45; }
-.audio-capture-settings__gain { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; margin-top: 18px; }
-.audio-capture-settings__gain label { font-weight: 650; }
-.audio-capture-settings__gain output { font-variant-numeric: tabular-nums; }
-.audio-capture-settings__gain input { grid-column: 1 / -1; width: 100%; accent-color: var(--tl-accent); }
-.audio-capture-settings__gain p { grid-column: 1 / -1; margin: 0; }
-.audio-capture-settings__note { margin: 14px 0 0; }
-@media (max-width: 640px) { .audio-capture-settings__modes { grid-template-columns: 1fr; } }
+/* The two processing modes, chosen like the colour themes: whole tiles, the
+ * chosen one marked with a check. */
+.capture-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 14px; }
+.capture-mode { position: relative; display: grid; align-content: start; gap: 4px; padding: 12px 40px 12px 14px; border: 1px solid var(--tl-border); border-radius: 7px; background: var(--tl-surface); cursor: pointer; transition: border-color 150ms, background-color 150ms; }
+.capture-mode:hover { border-color: var(--tl-border-strong); background: var(--tl-surface-hover); }
+.capture-mode[data-selected] { border-color: var(--tl-accent-emphasis); background: var(--tl-accent-subtle); }
+.capture-mode:has(input:focus-visible) { outline: 2px solid var(--tl-focus-ring); outline-offset: 2px; }
+.capture-mode:has(input:disabled) { cursor: default; opacity: .6; }
+/* The radio stays in place for the keyboard and the pointer, unseen. */
+.capture-mode input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; }
+.capture-mode strong { font-size: 13px; font-weight: 650; }
+.capture-mode small { color: var(--tl-text-secondary); font-size: 12px; line-height: 1.45; }
+.capture-mode__check { position: absolute; top: 12px; right: 12px; display: none; width: 19px; height: 19px; place-items: center; border-radius: 50%; color: var(--tl-text-on-accent); background: var(--tl-accent); }
+.capture-mode[data-selected] .capture-mode__check { display: grid; }
+
+/* The level fills the control column; the track shows how far it is raised. */
+.gain-control { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.gain-control output { min-width: 4ch; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: end; }
+.gain-control input { flex: 1; min-width: 0; height: 20px; margin: 0; background: transparent; appearance: none; cursor: pointer; }
+.gain-control input:disabled { cursor: default; opacity: .6; }
+.gain-control input:focus-visible { outline: none; }
+.gain-control input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--tl-accent) var(--_fill, 0%), var(--tl-border) var(--_fill, 0%)); }
+.gain-control input::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6px; border: 2px solid var(--tl-surface); border-radius: 50%; background: var(--tl-accent); box-shadow: 0 0 0 1px var(--tl-accent-border); appearance: none; }
+.gain-control input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--tl-focus-ring); }
+.gain-control input::-moz-range-track { height: 4px; border-radius: 2px; background: var(--tl-border); }
+.gain-control input::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--tl-accent); }
+.gain-control input::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid var(--tl-surface); border-radius: 50%; background: var(--tl-accent); box-shadow: 0 0 0 1px var(--tl-accent-border); }
+.gain-control input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--tl-focus-ring); }
+
+@media (max-width: 640px) { .capture-modes { grid-template-columns: 1fr; } }

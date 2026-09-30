@@ -31,6 +31,20 @@ type draftTranslationState struct {
 	revision  int64
 	final     *domain.Segment
 	abandoned bool
+	// wake ends a wait between draft requests when the line is finished.
+	wake chan struct{}
+}
+
+// defaultDraftInterval paces live translation of a line still being spoken:
+// a short line comes back quickly, and asking again at once for every change
+// would keep the translator busy with work that is about to be replaced.
+const defaultDraftInterval = time.Second
+
+// SetDraftTranslationInterval sets the least time from one draft translation
+// request to the next for the same line. A request that takes longer is
+// followed at once; a finished line is translated without waiting.
+func (s *Service) SetDraftTranslationInterval(interval time.Duration) {
+	s.draftInterval.Store(int64(max(0, interval)))
 }
 
 func (s *Service) targetsForLease(lease *recordLease) []string {
@@ -86,7 +100,7 @@ func (s *Service) UpdateDraft(lease *recordLease, input DraftTranslationInput) {
 			continue
 		}
 		draftCtx, draftCancel := context.WithCancel(s.ctx)
-		state := &draftTranslationState{task: translationTask{session: lease.access.Session, segment: segment, target: target, provider: lease.provider, phase: "draft", sourceRevision: input.Revision, draftLease: lease}, lease: lease, ctx: draftCtx, cancel: draftCancel, latest: segment, revision: input.Revision}
+		state := &draftTranslationState{task: translationTask{session: lease.access.Session, segment: segment, target: target, provider: lease.provider, phase: "draft", sourceRevision: input.Revision, draftLease: lease}, lease: lease, ctx: draftCtx, cancel: draftCancel, latest: segment, revision: input.Revision, wake: make(chan struct{}, 1)}
 		s.mu.Lock()
 		if s.closing || s.ctx.Err() != nil {
 			s.mu.Unlock()
@@ -115,6 +129,10 @@ func (s *Service) FinalizeDraft(lease *recordLease, final domain.Segment) {
 			copy := final
 			state.final = &copy
 			s.markDraftFinalizing(key, lease)
+			select {
+			case state.wake <- struct{}{}:
+			default:
+			}
 			s.draftMu.Unlock()
 			continue
 		}
@@ -205,6 +223,7 @@ func (s *Service) runDraft(key translationKey, state *draftTranslationState) {
 		// Keep the old complete display while the next request catches up.
 		s.beginTranslationProgress(task)
 		s.draftMu.Unlock()
+		started := time.Now()
 		ctx, cancel := context.WithTimeout(state.ctx, 100*time.Second)
 		input, inputErr := s.translationInput(task)
 		var response translate.Response
@@ -247,6 +266,17 @@ func (s *Service) runDraft(key translationKey, state *draftTranslationState) {
 		}
 		if state.revision != revision {
 			s.draftMu.Unlock()
+			// The line has changed: ask again once the interval since this
+			// request began has passed, or at once if it took longer.
+			if wait := time.Duration(s.draftInterval.Load()) - time.Since(started); wait > 0 {
+				timer := time.NewTimer(wait)
+				select {
+				case <-timer.C:
+				case <-state.wake:
+				case <-state.ctx.Done():
+				}
+				timer.Stop()
+			}
 			continue
 		}
 		delete(s.drafts, key)

@@ -524,6 +524,88 @@ var migrations = []migration{{version: 1, sql: `
  ALTER TABLE users ADD COLUMN onboarding_complete INTEGER NOT NULL DEFAULT 0
   CHECK(onboarding_complete IN (0,1));
  UPDATE users SET onboarding_complete=1;
+`}, {version: 20, sql: `
+ CREATE TABLE workspaces (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT '' CHECK(length(name) <= 240),
+  icon TEXT NOT NULL DEFAULT '' CHECK(length(icon) <= 32),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL
+ );
+ CREATE INDEX workspaces_user_idx ON workspaces(user_id,created_at);
+ ALTER TABLE interpretation_sessions ADD COLUMN workspace_id TEXT REFERENCES workspaces(id);
+ INSERT INTO workspaces(id,user_id,name,created_at,updated_at,last_used_at)
+  SELECT 'wsp_'||lower(hex(randomblob(16))),id,'',
+   CAST(strftime('%s','now') AS INTEGER)*1000000000,
+   CAST(strftime('%s','now') AS INTEGER)*1000000000,
+   CAST(strftime('%s','now') AS INTEGER)*1000000000
+  FROM users;
+ UPDATE interpretation_sessions SET workspace_id=(
+  SELECT workspace.id FROM workspaces workspace WHERE workspace.user_id=interpretation_sessions.user_id);
+ CREATE INDEX interpretation_sessions_workspace_idx ON interpretation_sessions(user_id,workspace_id,updated_at);
+`}, {version: 21, sql: `
+ ALTER TABLE users ADD COLUMN avatar_version INTEGER NOT NULL DEFAULT 0 CHECK(avatar_version >= 0);
+ CREATE TABLE user_avatars (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  content_type TEXT NOT NULL CHECK(content_type IN ('image/png','image/jpeg')),
+  data BLOB NOT NULL CHECK(length(data) BETWEEN 1 AND 262144),
+  updated_at INTEGER NOT NULL
+ );
+ ALTER TABLE users ADD COLUMN discoverable INTEGER NOT NULL DEFAULT 0 CHECK(discoverable IN (0,1));
+ ALTER TABLE session_shares ADD COLUMN audience TEXT NOT NULL DEFAULT 'anyone'
+  CHECK(audience IN ('anyone','members'));
+ CREATE TABLE share_members (
+  share_id TEXT NOT NULL REFERENCES session_shares(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at INTEGER NOT NULL,
+  PRIMARY KEY(share_id, user_id)
+ );
+ CREATE INDEX share_members_user_idx ON share_members(user_id, share_id);
+`}, {version: 22, sql: `
+ CREATE TABLE user_limits (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  concurrent_recordings INTEGER CHECK(concurrent_recordings IS NULL OR concurrent_recordings BETWEEN 1 AND 16),
+  monthly_recording_minutes INTEGER CHECK(monthly_recording_minutes IS NULL OR monthly_recording_minutes BETWEEN 0 AND 1000000),
+  storage_mb INTEGER CHECK(storage_mb IS NULL OR storage_mb BETWEEN 0 AND 10000000),
+  workspaces INTEGER CHECK(workspaces IS NULL OR workspaces BETWEEN 1 AND 100),
+  guest_links INTEGER CHECK(guest_links IS NULL OR guest_links IN (0,1)),
+  updated_at INTEGER NOT NULL
+ );
+ CREATE TABLE recognition_gaps (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  start_ms INTEGER NOT NULL CHECK(start_ms >= 0),
+  end_ms INTEGER NOT NULL CHECK(end_ms > start_ms),
+  sequence_from INTEGER NOT NULL CHECK(sequence_from > 0),
+  sequence_to INTEGER NOT NULL CHECK(sequence_to >= sequence_from),
+  state TEXT NOT NULL CHECK(state IN ('pending','filling','filled','failed')),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+  filled_segments INTEGER NOT NULL DEFAULT 0 CHECK(filled_segments >= 0),
+  last_error TEXT NOT NULL DEFAULT '' CHECK(length(last_error) <= 200),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(session_id,user_id) REFERENCES interpretation_sessions(id,user_id) ON DELETE CASCADE
+ );
+ CREATE INDEX recognition_gaps_state_idx ON recognition_gaps(state, updated_at);
+ CREATE INDEX recognition_gaps_session_idx ON recognition_gaps(session_id, start_ms);
+ ALTER TABLE segment_translations ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1 CHECK(attempts >= 0);
+`}, {version: 23, sql: `
+ CREATE TABLE default_limits (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  concurrent_recordings INTEGER NOT NULL CHECK(concurrent_recordings BETWEEN 1 AND 16),
+  monthly_recording_minutes INTEGER NOT NULL CHECK(monthly_recording_minutes BETWEEN 0 AND 1000000),
+  storage_mb INTEGER NOT NULL CHECK(storage_mb BETWEEN 0 AND 10000000),
+  workspaces INTEGER NOT NULL CHECK(workspaces BETWEEN 1 AND 100),
+  guest_links INTEGER NOT NULL CHECK(guest_links IN (0,1)),
+  updated_at INTEGER NOT NULL
+ );
+`}, {version: 24, sql: `
+ ALTER TABLE workspaces ADD COLUMN pinned_at INTEGER;
+ ALTER TABLE site_settings ADD COLUMN draft_translation_interval_ms INTEGER NOT NULL DEFAULT 1000
+  CHECK(draft_translation_interval_ms BETWEEN 0 AND 10000);
 `}}
 
 func encodeTime(value time.Time) int64 {

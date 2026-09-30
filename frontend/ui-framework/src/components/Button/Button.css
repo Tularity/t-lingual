@@ -163,11 +163,14 @@
     font-size: 1.15em;
   }
 
+  /* Clipped for the ellipsis, with room for descenders (--tl-glyph-room). */
   .tl-button__label {
     display: inline-block;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding-block: var(--tl-glyph-room);
+    margin-block: calc(-1 * var(--tl-glyph-room));
   }
 
   /* Under `asChild` the consumer's own element is the root, so there is no

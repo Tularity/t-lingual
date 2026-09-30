@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tularity/t-lingual/internal/domain"
 	"github.com/Tularity/t-lingual/internal/language"
@@ -243,6 +244,36 @@ func (s *Store) SetSegmentSpeaker(ctx context.Context, ownerID, sessionID, segme
 	result, err := s.db.ExecContext(ctx, `UPDATE segments SET speaker_id = ?
 		WHERE id = ? AND session_id = ? AND user_id = ?`, speakerID, segmentID, sessionID, ownerID)
 	return requireAffected(result, err, "set segment speaker")
+}
+
+// ReplaceSegmentSource changes the text of one of the owner's final lines from
+// exactly `from` to `to`, and the session's transcript size with it — as when
+// the recognizer's closing mark for the line arrives with the next one. A line
+// whose text is no longer `from` is left alone and reported as not found.
+func (s *Store) ReplaceSegmentSource(ctx context.Context, ownerID, sessionID, segmentID, from, to string) error {
+	if ownerID == "" || sessionID == "" || segmentID == "" || strings.TrimSpace(to) == "" ||
+		len(to) > maxSegmentTextBytes || !utf8.ValidString(to) {
+		return errors.New("store: invalid segment source")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin segment source change: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE segments SET source_text = ?
+		WHERE id = ? AND session_id = ? AND user_id = ? AND final = 1 AND source_text = ?`,
+		to, segmentID, sessionID, ownerID, from)
+	if err := requireAffected(result, err, "change segment source"); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE interpretation_sessions SET transcript_bytes = MAX(0, transcript_bytes + ?)
+		WHERE id = ? AND user_id = ?`, len(to)-len(from), sessionID, ownerID); err != nil {
+		return fmt.Errorf("store: change transcript size: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit segment source change: %w", err)
+	}
+	return nil
 }
 
 type SpeakerCandidate struct {

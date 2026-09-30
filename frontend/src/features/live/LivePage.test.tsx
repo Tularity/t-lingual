@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AnchorHTMLAttributes } from 'react'
+import { ToastProvider } from '../../design-system'
 import { LivePage } from './LivePage'
 
 const live = vi.hoisted(() => ({
@@ -44,7 +45,7 @@ describe('live transcript directionality', () => {
   })
 
   it('lets session, source, translation and partial text establish their own direction', async () => {
-    render(<LivePage sessionId="session_rtl" />)
+    render(<ToastProvider><LivePage sessionId="session_rtl" /></ToastProvider>)
 
     expect(screen.getByRole('heading', { name: 'جلسة الفريق' })).toHaveAttribute('dir', 'auto')
     expect(screen.getByText('مرحبا بالعالم')).toHaveAttribute('dir', 'auto')
@@ -56,7 +57,7 @@ describe('live transcript directionality', () => {
 
   it('offers a functional data retry when initial session loading fails', async () => {
     Object.assign(live, { session: null, state: 'error', error: 'Service unavailable.' })
-    render(<LivePage sessionId="session_rtl" />)
+    render(<ToastProvider><LivePage sessionId="session_rtl" /></ToastProvider>)
 
     expect(screen.getByRole('heading', { name: 'Live session unavailable' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try loading again' }))
@@ -64,7 +65,7 @@ describe('live transcript directionality', () => {
   })
 
   it('exposes a real audio pause control separately from scroll following', async () => {
-    render(<LivePage sessionId="session_rtl" />)
+    render(<ToastProvider><LivePage sessionId="session_rtl" /></ToastProvider>)
     await userEvent.click(screen.getByRole('button', { name: 'Pause audio' }))
     expect(live.togglePause).toHaveBeenCalledOnce()
     await userEvent.click(screen.getByRole('button', { name: 'Focus view' }))

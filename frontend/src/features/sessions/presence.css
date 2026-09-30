@@ -1,0 +1,19 @@
+.presence{display:inline-flex;align-items:center;min-height:36px;padding:2px 4px;border:0;border-radius:999px;background:none;cursor:pointer;transition:var(--tl-transition-control)}
+.presence:hover{background:var(--tl-surface-hover)}
+.presence:focus-visible{outline:2px solid var(--tl-focus-ring);outline-offset:2px}
+/* A light ring parts the overlapping faces; initials on the page's own sand
+ * would all but vanish, so they sit on a warm fill instead. */
+.presence .tl-avatar-group{--_ring:var(--tl-surface);--_overlap:5px}
+.presence .tl-avatar[data-fallback],.presence-panel .tl-avatar[data-fallback]{--_bg:color-mix(in oklab,var(--tl-accent) 24%,var(--tl-surface));--_fg:var(--tl-text-brand)}
+.presence .tl-avatar[data-guest],.presence-panel .tl-avatar[data-guest]{--_bg:var(--tl-surface-active);--_fg:var(--tl-text-secondary)}
+/* Whoever is recording wears the recording colour as their ring. */
+.presence [data-recording],.presence-panel [data-recording].tl-avatar{--_ring:var(--tl-danger-solid);--_ring-width:2px}
+.presence-panel .tl-avatar[data-guest] .tl-avatar__fallback,.presence [data-guest] .tl-avatar__fallback{display:inline-flex}
+.presence-panel{min-width:220px;max-width:min(300px,calc(100vw - 32px))}
+.presence-panel__title{margin:0 0 8px;color:var(--tl-text-muted);font-size:12px;font-weight:600}
+.presence-panel__list{display:grid;gap:4px;max-height:280px;margin:0;padding:0;overflow-y:auto;list-style:none}
+.presence-panel__list li{display:flex;align-items:center;gap:10px;min-height:34px}
+.presence-panel__name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.presence-panel__list small{flex:none;padding:1px 7px;border-radius:999px;color:var(--tl-text-secondary);background:var(--tl-surface-sunken);font-size:11px}
+.presence-panel__list small[data-recording]{color:var(--tl-danger-fg);background:var(--tl-danger-bg)}
+.presence-panel__more{margin:8px 0 0;color:var(--tl-text-muted);font-size:12px}
