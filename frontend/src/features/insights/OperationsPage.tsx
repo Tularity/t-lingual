@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { BarList, Gauge, InlineMessage, LineChart, Meter, SegmentedControl, type ChartSeries } from '@t-lingual/ui'
+import { BarList, Gauge, InlineMessage, LineChart, Meter, SegmentedControl, type ChartSeries } from '@tular/ui'
 import { api } from '../../api/client'
 import type { OperationsReport, OperationsSample, ProviderReading } from '../../api/contracts'
 import { Badge, Button, Card, EmptyState, LoadingState } from '../../design-system'

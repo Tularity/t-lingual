@@ -1,6 +1,6 @@
 import { useI18n } from '../../app/i18n'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Badge, Button, EmptyState, Icon, Spinner, Tooltip } from '@t-lingual/ui'
+import { Badge, Button, EmptyState, Icon, Spinner, Tooltip } from '@tular/ui'
 import { api } from '../../api/client'
 import type { RecognitionGap, Segment, SegmentPageResponse } from '../../api/contracts'
 import { errorMessage, formatTimestamp } from '../../app/utils'

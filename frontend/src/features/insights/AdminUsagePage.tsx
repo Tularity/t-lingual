@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BarList, DataTable, DonutChart, LineChart, SearchSelect, SegmentedControl, type DataTableColumn } from '@t-lingual/ui'
+import { BarList, DataTable, DonutChart, LineChart, SearchSelect, SegmentedControl, type DataTableColumn } from '@tular/ui'
 import { api } from '../../api/client'
 import type { SiteUsage, UsageReport, User } from '../../api/contracts'
 import { Badge, Button, Card, EmptyState, Icon, LoadingState } from '../../design-system'

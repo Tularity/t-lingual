@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {useI18n,translate,type ResolvedLanguage} from '../../app/i18n'
 import { createPortal } from 'react-dom'
-import { Button, Icon } from '@t-lingual/ui'
+import { Button, Icon } from '@tular/ui'
 import type { Segment } from '../../api/contracts'
 import { languageName } from '../../app/utils'
 import { LanguageLabel, languageFlag } from '../languages'
@@ -57,7 +57,9 @@ type WebKitVideo = HTMLVideoElement & {
 function videoPiPMode(): 'standard' | 'webkit' | null {
   if (typeof document === 'undefined' || typeof HTMLCanvasElement.prototype.captureStream !== 'function') return null
   const probe = document.createElement('video') as WebKitVideo
-  if (probe.webkitSupportsPresentationMode?.('picture-in-picture') && typeof probe.webkitSetPresentationMode === 'function') return 'webkit'
+  // Safari reports false for an empty probe until it has a media source.
+  // Detect the API here, rather than the readiness of this unloaded video.
+  if (typeof probe.webkitSetPresentationMode === 'function') return 'webkit'
   if (document.pictureInPictureEnabled && typeof HTMLVideoElement.prototype.requestPictureInPicture === 'function') return 'standard'
   return null
 }
@@ -186,7 +188,7 @@ function drawVideoFrame(canvas: HTMLCanvasElement, options: TranscriptPiPOptions
 /**
  * The video a drawn transcript floats in: a canvas stream playing in a video
  * that is in the page, as Safari requires of a video it floats, but not seen.
- * It is made ready before it is asked for, so a click finds it with a frame.
+ * Its stream is attached ahead of the click; Safari may only load it on play.
  */
 interface VideoSource {
   canvas: HTMLCanvasElement
@@ -194,6 +196,8 @@ interface VideoSource {
   stream: MediaStream
   /** Set while the page itself plays or pauses the video, so its events are not taken for the viewer's. */
   syncing: boolean
+  syncEpoch: number
+  playbackTimer: number
 }
 
 function createVideoSource(options: TranscriptPiPOptions): VideoSource {
@@ -204,18 +208,23 @@ function createVideoSource(options: TranscriptPiPOptions): VideoSource {
   video.className = 'tv-pip-video-source'
   video.setAttribute('aria-hidden', 'true')
   video.muted = true; video.playsInline = true
+  video.width = canvas.width; video.height = canvas.height
   video.setAttribute('playsinline', ''); video.setAttribute('webkit-playsinline', '')
-  video.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none'
+  // Safari on macOS derives the floating window's shape from this box.
+  // Keep the canvas ratio even though the inline source is barely visible.
+  video.style.cssText = 'position:fixed;right:0;bottom:0;width:16px;height:10px;opacity:0.01;pointer-events:none'
   video.srcObject = stream
   document.body.append(video)
   // Drawn once capture has begun, so the stream has its first frame.
   drawVideoFrame(canvas, options)
-  return { canvas, video, stream, syncing: false }
+  return { canvas, video, stream, syncing: false, syncEpoch: 0, playbackTimer: 0 }
 }
 
 /** Stops the capture and removes the video; `drawing` and `listeners` are its redraw timer and event listeners, if it floated. */
 function destroyVideoSource(source: VideoSource, drawing: number, listeners: Array<[string, () => void]>) {
   window.clearInterval(drawing)
+  window.clearTimeout(source.playbackTimer)
+  source.syncEpoch += 1
   for (const [type, listener] of listeners) source.video.removeEventListener(type, listener)
   source.stream.getTracks().forEach((track) => track.stop())
   source.syncing = true
@@ -236,16 +245,30 @@ function hasFrame(video: HTMLVideoElement) {
 
 /** Marks the video as moved by the page until the returned release is called, a turn later. */
 function holdSync(source: VideoSource) {
+  const epoch = ++source.syncEpoch
   source.syncing = true
-  return () => { window.setTimeout(() => { source.syncing = false }, 0) }
+  return () => { window.setTimeout(() => { if (source.syncEpoch === epoch) source.syncing = false }, 0) }
 }
 
 /** Plays or pauses the floating video for the page's own reasons, not the viewer's. */
 function setPlaying(source: VideoSource, playing: boolean) {
-  if (playing !== source.video.paused) return
+  window.clearTimeout(source.playbackTimer)
   const release = holdSync(source)
-  if (playing) void source.video.play().catch(() => undefined).finally(release)
-  else { source.video.pause(); release() }
+  const epoch = source.syncEpoch
+  const started = source.video.paused ? source.video.play() : Promise.resolve()
+  if (playing) void started.catch(() => undefined).finally(release)
+  else {
+    // A paused video freezes its last frame. Briefly play the newly drawn
+    // status before pausing, including when the native control paused first.
+    void started.catch(() => undefined).then(() => {
+      if (source.syncEpoch !== epoch) return
+      source.playbackTimer = window.setTimeout(() => {
+        if (source.syncEpoch !== epoch) return
+        source.video.pause()
+        release()
+      }, 120)
+    })
+  }
 }
 
 export function useTranscriptPiP(options: TranscriptPiPOptions) {
@@ -303,22 +326,28 @@ export function useTranscriptPiP(options: TranscriptPiPOptions) {
     }
     const source = videoSource.current
     if (source && videoOpen.current) {
-      if (document.pictureInPictureElement === source.video) void document.exitPictureInPicture().catch(() => undefined)
-      if (source.video.webkitPresentationMode === 'picture-in-picture') source.video.webkitSetPresentationMode?.('inline')
+      if (videoMode === 'webkit') {
+        if (source.video.webkitPresentationMode === 'picture-in-picture') source.video.webkitSetPresentationMode?.('inline')
+      } else if (document.pictureInPictureElement === source.video) void document.exitPictureInPicture().catch(() => undefined)
       releaseVideo()
     }
     setIsOpen(false)
-  }, [releaseVideo])
+  }, [releaseVideo, videoMode])
 
   const openVideo = useCallback(async (epoch: number) => {
     const source = videoSource.current ?? (videoSource.current = createVideoSource(latestOptions.current))
     drawVideoFrame(source.canvas, latestOptions.current)
+    // Capture must keep producing frames while play() waits for the video,
+    // and timers keep the transcript moving when Safari is in the background.
+    window.clearInterval(videoDrawing.current)
+    videoDrawing.current = window.setInterval(() => { if (videoSource.current === source) drawVideoFrame(source.canvas, latestOptions.current) }, 250)
     videoOpen.current = true
-    // Played from the click, then floated: at once when it already has a
-    // frame, which it has unless the click came before it could be made ready.
+    // Start playback in the click, and request PiP synchronously when a frame
+    // is already available. Safari may need playback before loading a frame.
     const release = holdSync(source)
     const playing = source.video.play().catch(() => undefined)
     const enter = () => {
+      if (!mounted.current || requestEpoch.current !== epoch || videoSource.current !== source) return Promise.resolve()
       if (videoMode === 'webkit') { source.video.webkitSetPresentationMode!('picture-in-picture'); return Promise.resolve() }
       return source.video.requestPictureInPicture().then(() => undefined)
     }
@@ -329,7 +358,9 @@ export function useTranscriptPiP(options: TranscriptPiPOptions) {
       if (document.pictureInPictureElement === source.video) void document.exitPictureInPicture().catch(() => undefined)
       return
     }
-    const floating = () => document.pictureInPictureElement === source.video || source.video.webkitPresentationMode === 'picture-in-picture'
+    // Safari clears its standard PiP element after the WebKit mode changes.
+    // Mixing those states mistakes the native close animation for a pause.
+    const floating = () => videoMode === 'webkit' ? source.video.webkitPresentationMode === 'picture-in-picture' : document.pictureInPictureElement === source.video
     const onLeave = () => {
       if (floating()) return
       if (videoSource.current === source) releaseVideo()
@@ -352,11 +383,6 @@ export function useTranscriptPiP(options: TranscriptPiPOptions) {
     }
     videoListeners.current = [['leavepictureinpicture', onLeave], ['webkitpresentationmodechanged', onLeave], ['play', onPlay], ['pause', onPause]]
     for (const [type, listener] of videoListeners.current) source.video.addEventListener(type, listener)
-    // Drawn on a timer rather than each animation frame: animation frames
-    // stop while the page is in the background, and the floating window is
-    // most useful then.
-    window.clearInterval(videoDrawing.current)
-    videoDrawing.current = window.setInterval(() => { if (videoSource.current === source) drawVideoFrame(source.canvas, latestOptions.current) }, 250)
     setIsOpen(true)
   }, [releaseVideo, videoMode])
 

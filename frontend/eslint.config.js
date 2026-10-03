@@ -5,10 +5,8 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  // `dist` alone only matches the app's own build output; the workspace package
-  // emits its own, and linting generated declarations reports faults nobody can
-  // act on. `lab` is a local authoring surface that is not part of the product.
-  { ignores: ['dist', 'coverage', 'ui-framework/dist', 'lab'] },
+  // `lab` is a local authoring surface that is not part of the product.
+  { ignores: ['dist', 'coverage', 'lab'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

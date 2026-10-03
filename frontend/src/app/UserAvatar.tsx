@@ -1,4 +1,4 @@
-import { Avatar, type AvatarProps } from '@t-lingual/ui'
+import { Avatar, type AvatarProps } from '@tular/ui'
 import { api } from '../api/client'
 import type { User } from '../api/contracts'
 

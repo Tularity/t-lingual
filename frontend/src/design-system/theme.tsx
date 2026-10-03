@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { ThemeProvider as Provider, useTheme as useUITheme } from '@t-lingual/ui'
+import { ThemeProvider as Provider, useTheme as useUITheme } from '@tular/ui'
 export type ThemeMode = 'system' | 'light' | 'dark'
 function ThemeChrome() {
   const { theme } = useUITheme()

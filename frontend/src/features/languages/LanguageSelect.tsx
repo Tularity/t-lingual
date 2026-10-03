@@ -1,7 +1,7 @@
 import {useI18n} from '../../app/i18n'
 import {languageDisplayName} from './LanguageLabel'
 import { useId } from 'react'
-import { Select, SelectOption } from '@t-lingual/ui'
+import { Select, SelectOption } from '@tular/ui'
 import { languages as allLanguages } from '../../app/utils'
 import { LanguageLabel } from './LanguageLabel'
 

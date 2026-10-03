@@ -1,5 +1,5 @@
 import {useEffect,useState,type FormEvent} from 'react'
-import {Markdown} from '@t-lingual/ui'
+import {Markdown} from '@tular/ui'
 import {api} from '../../api/client'
 import type {SiteSettings} from '../../api/contracts'
 import {useI18n} from '../../app/i18n'

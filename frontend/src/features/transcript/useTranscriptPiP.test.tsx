@@ -17,6 +17,7 @@ describe('transcript picture-in-picture', () => {
     Reflect.deleteProperty(HTMLCanvasElement.prototype, 'captureStream')
     Reflect.deleteProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode')
     Reflect.deleteProperty(HTMLVideoElement.prototype, 'webkitSetPresentationMode')
+    Reflect.deleteProperty(HTMLVideoElement.prototype, 'webkitPresentationMode')
     vi.restoreAllMocks()
     document.documentElement.dataset.theme = 'light'
   })
@@ -49,10 +50,11 @@ describe('transcript picture-in-picture', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D)
     vi.spyOn(HTMLVideoElement.prototype, 'play').mockResolvedValue(undefined)
     vi.spyOn(HTMLVideoElement.prototype, 'pause').mockImplementation(() => undefined)
+    Object.defineProperty(document, 'exitPictureInPicture', { configurable: true, value: vi.fn(async () => undefined) })
     vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(HTMLMediaElement.HAVE_ENOUGH_DATA)
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
-    return { stop }
+    return { stop, context }
   }
 
   it('stops video capture tracks when fallback PiP closes', async () => {
@@ -67,7 +69,7 @@ describe('transcript picture-in-picture', () => {
     view.unmount()
   })
 
-  it('asks for the floating video within the click itself, as Safari requires', async () => {
+  it('requests standard video PiP within the click when a frame is already ready', async () => {
     videoBrowser()
     const request = vi.fn(async () => undefined)
     Object.defineProperty(document, 'pictureInPictureEnabled', { configurable: true, value: true })
@@ -121,6 +123,115 @@ describe('transcript picture-in-picture', () => {
     expect(request).not.toHaveBeenCalled()
     expect(await screen.findByRole('button', { name: 'Close picture-in-picture' })).toBeInTheDocument()
     Reflect.deleteProperty(HTMLVideoElement.prototype, 'webkitPresentationMode')
+  })
+
+  it('uses WebKit even when an unloaded probe reports no supported presentation mode', async () => {
+    videoBrowser()
+    const standard = vi.fn(async () => undefined)
+    const webkit = vi.fn()
+    Object.defineProperty(document, 'pictureInPictureEnabled', { configurable: true, value: true })
+    Object.defineProperty(HTMLVideoElement.prototype, 'requestPictureInPicture', { configurable: true, value: standard })
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', { configurable: true, value: () => false })
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSetPresentationMode', { configurable: true, value: webkit })
+    render(<TranscriptPiPButton {...props} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Picture-in-picture' }))
+    expect(webkit).toHaveBeenCalledWith('picture-in-picture')
+    expect(standard).not.toHaveBeenCalled()
+    const video = document.querySelector<HTMLVideoElement>('video.tv-pip-video-source')!
+    // macOS Safari uses the inline box to size its native floating window.
+    expect(Number.parseFloat(video.style.width) / Number.parseFloat(video.style.height)).toBe(video.width / video.height)
+    expect(video.width / video.height).toBe(640 / 400)
+  })
+
+  it('keeps drawing fresh transcript frames while playback is waiting to become ready', async () => {
+    const { context } = videoBrowser()
+    vi.useFakeTimers()
+    try {
+      let ready: number = HTMLMediaElement.HAVE_NOTHING
+      vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockImplementation(() => ready)
+      let resolvePlay!: () => void
+      vi.mocked(HTMLVideoElement.prototype.play).mockImplementation(() => new Promise<void>(resolve => { resolvePlay = resolve }))
+      const request = vi.fn(async () => undefined)
+      Object.defineProperty(document, 'pictureInPictureEnabled', { configurable: true, value: true })
+      Object.defineProperty(HTMLVideoElement.prototype, 'requestPictureInPicture', { configurable: true, value: request })
+      const view = render(<TranscriptPiPButton {...props} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Picture-in-picture' }))
+      expect(request).not.toHaveBeenCalled()
+      context.fillText.mockClear()
+      view.rerender(<TranscriptPiPButton {...props} segments={[{ ...segment, sourceText: 'New partial speech', final: false }]} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      expect(context.fillText).toHaveBeenCalledWith('New partial speech', expect.any(Number), expect.any(Number))
+      await act(async () => { ready = HTMLMediaElement.HAVE_CURRENT_DATA; resolvePlay() })
+      expect(request).toHaveBeenCalledOnce()
+      view.unmount()
+      context.fillText.mockClear()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(context.fillText).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('does not pause recording when WebKit closes before the standard PiP element clears', async () => {
+    videoBrowser()
+    vi.useFakeTimers()
+    try {
+      let mode = 'inline'
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitPresentationMode', { configurable: true, get: () => mode })
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitSetPresentationMode', { configurable: true, value: (next: string) => { mode = next } })
+      const onPause = vi.fn(), onResume = vi.fn()
+      const view = render(<TranscriptPiPButton {...props} control={{ recording: true, label: 'Recording', onPause, onResume }} />)
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Picture-in-picture' })) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+      const video = document.querySelector<HTMLVideoElement>('video.tv-pip-video-source')!
+      // Safari retains this reference during its native close animation.
+      Object.defineProperty(document, 'pictureInPictureElement', { configurable: true, value: video })
+      await act(async () => {
+        mode = 'inline'
+        video.dispatchEvent(new Event('pause'))
+        video.dispatchEvent(new Event('webkitpresentationmodechanged'))
+        await vi.advanceTimersByTimeAsync(2500)
+      })
+      expect(onPause).not.toHaveBeenCalled()
+      expect(onResume).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Picture-in-picture' })).toBeInTheDocument()
+      expect(video.isConnected).toBe(false)
+      view.unmount()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('presents the paused status before freezing the video without resuming recording', async () => {
+    const { context } = videoBrowser()
+    vi.useFakeTimers()
+    try {
+      let paused = true
+      vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(() => paused)
+      vi.mocked(HTMLVideoElement.prototype.play).mockImplementation(async function (this: HTMLVideoElement) { paused = false; this.dispatchEvent(new Event('play')) })
+      vi.mocked(HTMLVideoElement.prototype.pause).mockImplementation(function (this: HTMLVideoElement) { paused = true; this.dispatchEvent(new Event('pause')) })
+      Object.defineProperty(document, 'pictureInPictureEnabled', { configurable: true, value: true })
+      Object.defineProperty(HTMLVideoElement.prototype, 'requestPictureInPicture', { configurable: true, value: vi.fn(async function (this: HTMLVideoElement) { Object.defineProperty(document, 'pictureInPictureElement', { configurable: true, value: this }) }) })
+      const onPause = vi.fn(), onResume = vi.fn()
+      const view = render(<TranscriptPiPButton {...props} control={{ recording: true, label: 'Recording', onPause, onResume }} />)
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Picture-in-picture' })) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+      const video = document.querySelector<HTMLVideoElement>('video.tv-pip-video-source')!
+      await act(async () => { video.pause(); await vi.advanceTimersByTimeAsync(800) })
+      expect(onPause).toHaveBeenCalledOnce()
+      context.fillText.mockClear()
+      view.rerender(<TranscriptPiPButton {...props} control={{ recording: false, label: 'Audio paused', onPause, onResume }} />)
+      expect(context.fillText).toHaveBeenCalledWith('Audio paused', expect.any(Number), expect.any(Number))
+      expect(paused).toBe(false)
+      await act(async () => { await vi.advanceTimersByTimeAsync(130) })
+      expect(paused).toBe(true)
+      expect(onResume).not.toHaveBeenCalled()
+      expect(onPause).toHaveBeenCalledOnce()
+      // A later recording change must cancel a pending internal pause.
+      view.rerender(<TranscriptPiPButton {...props} control={{ recording: true, label: 'Recording', onPause, onResume }} />)
+      view.rerender(<TranscriptPiPButton {...props} control={{ recording: false, label: 'Audio paused', onPause, onResume }} />)
+      view.rerender(<TranscriptPiPButton {...props} control={{ recording: true, label: 'Recording', onPause, onResume }} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(paused).toBe(false)
+      expect(onResume).not.toHaveBeenCalled()
+      view.unmount()
+    } finally { vi.useRealTimers() }
   })
 
   it('pauses and resumes the recording from the floating window’s own controls', async () => {

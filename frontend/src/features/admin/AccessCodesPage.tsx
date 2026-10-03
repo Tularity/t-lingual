@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DataTable, Drawer, DrawerBody, DrawerFooter, DrawerHeader, DrawerTitle, SearchSelect, SegmentedControl, type DataTableColumn } from '@t-lingual/ui'
+import { DataTable, Drawer, DrawerBody, DrawerFooter, DrawerHeader, DrawerTitle, SearchSelect, SegmentedControl, type DataTableColumn } from '@tular/ui'
 import { api } from '../../api/client'
 import type { CreateCodeInput, Invitation, User } from '../../api/contracts'
 import { Badge, Button, Card, Dialog, EmptyState, Icon, Input, LoadingState, useToast } from '../../design-system'

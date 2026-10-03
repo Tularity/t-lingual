@@ -1,5 +1,5 @@
 import { act, render, renderHook } from '@testing-library/react'
-import { COLLAPSE_MARK_FRAME } from '@t-lingual/ui'
+import { COLLAPSE_MARK_FRAME } from '@tular/ui'
 import LOGO_SVG from '../../public/brand/tularity.svg?raw'
 import FAVICON_SVG from '../../public/favicon.svg?raw'
 import { Curtain } from './Curtain'

@@ -1,5 +1,5 @@
 import { useMemo, useState, type MouseEvent } from 'react'
-import { DataTable, Select, SelectOption, type DataTableColumn } from '@t-lingual/ui'
+import { DataTable, Select, SelectOption, type DataTableColumn } from '@tular/ui'
 import type { User } from '../../api/contracts'
 import { Badge, Button, Card, EmptyState, Icon, Input, LoadingState, Switch } from '../../design-system'
 import { useAuth } from '../../app/auth'

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react'
-import { COLLAPSE_MARK_GATHER_FROM, COLLAPSE_MARK_GONE, CollapseMark, IRIS_EDGE, iris, useLoadsSettled } from '@t-lingual/ui'
+import { COLLAPSE_MARK_GATHER_FROM, COLLAPSE_MARK_GONE, CollapseMark, IRIS_EDGE, iris, useLoadsSettled } from '@tular/ui'
 import { LIFT_MS, LOGO_INHALE_MS, LOGO_SETTLE_MS, LOGO_SWELL_MS, SIGN_IN_CIRCLE_MS, SIGN_IN_OPEN_MS, SIGN_IN_WINDOW_MS, SIGN_OUT_CLOSE_MS, signInEnds, signInSeconds, type CurtainKind, type CurtainStage } from './stageTiming'
 import type { Point } from './stage'
 import './curtain.css'

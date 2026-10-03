@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { InlineMessage, SegmentedControl } from '@t-lingual/ui'
+import { InlineMessage, SegmentedControl } from '@tular/ui'
 import { api } from '../../api/client'
 import type { AdminUserSecurity, BrowserSession, CreateCodeInput, Invitation, Passkey, User } from '../../api/contracts'
 import { codeCreateScope } from '../../app/accessCodes'

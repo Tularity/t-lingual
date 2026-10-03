@@ -5,7 +5,7 @@ import { useRouter } from '../../app/router'
 import { useAuth } from '../../app/auth'
 import { rememberShare } from '../../app/pendingShare'
 import { Brand } from '../../app/AppShell'
-import { LOADING_STATE_DELAY } from '@t-lingual/ui'
+import { LOADING_STATE_DELAY } from '@tular/ui'
 import { Button, Card, EmptyState, Spinner } from '../../design-system'
 import { errorMessage, languages } from '../../app/utils'
 

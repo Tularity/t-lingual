@@ -1,4 +1,4 @@
-import { Avatar, AvatarGroup, Popover, Tooltip } from '@t-lingual/ui'
+import { Avatar, AvatarGroup, Popover, Tooltip } from '@tular/ui'
 import type { Presence, PresenceList } from '../../api/contracts'
 import { useI18n } from '../../app/i18n'
 import { UserAvatar } from '../../app/UserAvatar'

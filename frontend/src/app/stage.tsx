@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { holdReveals, releaseReveals, useReducedMotion } from '@t-lingual/ui'
+import { holdReveals, releaseReveals, useReducedMotion } from '@tular/ui'
 import type { useAuth } from './auth'
 import { LIFT_MS, SIGN_IN_LEAVE_MS, SIGN_IN_REVEAL_LIMIT_MS, SIGN_OUT_CLOSE_MS, type CurtainKind, type CurtainStage } from './stageTiming'
 

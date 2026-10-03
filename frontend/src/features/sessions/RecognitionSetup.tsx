@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useI18n } from '../../app/i18n'
-import { Checkbox, Fieldset } from '@t-lingual/ui'
+import { Checkbox, Fieldset } from '@tular/ui'
 import { Button, Input } from '../../design-system'
 import type { CreateSessionInput } from '../../api/contracts'
 import { LanguageLabel, languageDisplayName } from '../languages'

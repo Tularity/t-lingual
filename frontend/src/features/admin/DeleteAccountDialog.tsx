@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { InlineMessage } from '@t-lingual/ui'
+import { InlineMessage } from '@tular/ui'
 import { api } from '../../api/client'
 import type { AccountStanding, User } from '../../api/contracts'
 import { useI18n } from '../../app/i18n'

@@ -1,6 +1,6 @@
 /* Timings of the screen-wide transitions, in one place so the orchestration
  * and the CSS that plays them cannot disagree. */
-import { COLLAPSE_MARK_COLLAPSE_START, COLLAPSE_MARK_GATHER_FLIGHT_MS, COLLAPSE_MARK_GATHER_STAGGER_MS } from '@t-lingual/ui'
+import { COLLAPSE_MARK_COLLAPSE_START, COLLAPSE_MARK_GATHER_FLIGHT_MS, COLLAPSE_MARK_GATHER_STAGGER_MS } from '@tular/ui'
 
 /** Signing in and signing out. A page that loads, or reloads, shows nothing
  *  over itself while it finds out who is signed in. */

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Meter, Sparkline } from '@t-lingual/ui'
+import { Meter, Sparkline } from '@tular/ui'
 import type { AccountStanding, UserLimits } from '../../api/contracts'
 import { Icon, type IconName } from '../../design-system'
 import { useI18n } from '../../app/i18n'

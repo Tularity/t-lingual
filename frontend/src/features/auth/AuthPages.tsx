@@ -1,8 +1,8 @@
 import { lazy, startTransition, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { CodeInput } from '@t-lingual/ui'
+import { CodeInput } from '@tular/ui'
 import { UserAvatar } from '../../app/UserAvatar'
 import { Button, Input, Icon, Dialog, LoadingState, Spinner } from '../../design-system'
-import { Brand, InterfaceMenus } from '../../app/AppShell'
+import { Brand, InterfaceMenus, RepositoryLink } from '../../app/AppShell'
 import { ApiError } from '../../api/client'
 import { useAuth } from '../../app/auth'
 import { afterSignIn } from '../../app/pendingShare'
@@ -36,7 +36,7 @@ function AuthLayout({ title, subtitle, children, footer, mode }: { title: ReactN
         </div>
       </div>
     </section>
-    <section className="auth-panel"><div className="auth-interface"><InterfaceMenus /></div><div key={mode} className="auth-card"><div className="auth-mobile-brand"><Brand /></div><div className="auth-card__heading"><span className="auth-card__eyebrow">{t("YOUR WORKSPACE")}</span><h2>{title}</h2><p>{subtitle}</p></div>{__TLINGUAL_DEVELOPMENT_MOCK__ && <div className="auth-demo" role="status"><Icon name="info" size={17} /><span><strong>{t("Demo preview")}</strong> {t("· Passkey verification is simulated in this development workspace.")}<small className="auth-demo__codes">{t("Test codes 111111, 222222, 333333 and 444444 sign in to a workspace that takes about 3, 7, 9 or 25 seconds to load; 555555 registers a new account.")}</small></span></div>}{children}{footer && <div className="auth-card__footer">{footer}</div>}<p className="auth-security"><Icon name="lock" size={15} />{t("Passkeys and one-time codes · No passwords")}</p></div></section>
+    <section className="auth-panel"><div className="auth-interface"><InterfaceMenus /><RepositoryLink /></div><div key={mode} className="auth-card"><div className="auth-mobile-brand"><Brand /></div><div className="auth-card__heading"><span className="auth-card__eyebrow">{t("YOUR WORKSPACE")}</span><h2>{title}</h2><p>{subtitle}</p></div>{__TLINGUAL_DEVELOPMENT_MOCK__ && <div className="auth-demo" role="status"><Icon name="info" size={17} /><span><strong>{t("Demo preview")}</strong> {t("· Passkey verification is simulated in this development workspace.")}<small className="auth-demo__codes">{t("Test codes 111111, 222222, 333333 and 444444 sign in to a workspace that takes about 3, 7, 9 or 25 seconds to load; 555555 registers a new account.")}</small></span></div>}{children}{footer && <div className="auth-card__footer">{footer}</div>}<p className="auth-security"><Icon name="lock" size={15} />{t("Passkeys and one-time codes · No passwords")}</p></div></section>
   </main>
 }
 

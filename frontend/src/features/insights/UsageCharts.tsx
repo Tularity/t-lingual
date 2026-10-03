@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BarChart, BarList, DonutChart, Heatmap, LineChart } from '@t-lingual/ui'
+import { BarChart, BarList, DonutChart, Heatmap, LineChart } from '@tular/ui'
 import type { UsageReport, UsageSlice } from '../../api/contracts'
 import { Link } from '../../app/router'
 import { useI18n } from '../../app/i18n'

@@ -5,7 +5,7 @@ import { useI18n } from '../../app/i18n'
 import { Link, useRouter } from '../../app/router'
 import { errorMessage, relativeTime } from '../../app/utils'
 import { useWorkspaces, workspaceIcon } from '../../app/workspaces'
-import { Menu, MenuItem, MenuSeparator, useRevealOnView } from '@t-lingual/ui'
+import { Menu, MenuItem, MenuSeparator, useRevealOnView } from '@tular/ui'
 import { DeleteWorkspaceDialog, WorkspaceDialog } from './WorkspaceDialogs'
 import './workspaces.css'
 

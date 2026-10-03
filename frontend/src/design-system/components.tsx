@@ -1,7 +1,7 @@
 // Product-facing adapters preserve the feature API while the established UI
 // framework owns rendering, keyboard interaction, focus and motion.
 import { forwardRef, useCallback, useEffect, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes, type ReactNode } from 'react'
-import * as UI from '@t-lingual/ui'
+import * as UI from '@tular/ui'
 import { Icon, type IconName } from './icons'
 import './components.css'
 

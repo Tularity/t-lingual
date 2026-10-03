@@ -1,6 +1,6 @@
 import { useI18n } from '../../app/i18n'
 import { useEffect, useRef, useState } from 'react'
-import { SegmentedControl } from '@t-lingual/ui'
+import { SegmentedControl } from '@tular/ui'
 import { Badge, Button, Card, EmptyState, Icon, LoadingState, buttonClassName } from '../../design-system'
 import { api } from '../../api/client'
 import { Link } from '../../app/router'

@@ -1,4 +1,4 @@
-import { Meter, Tooltip } from '@t-lingual/ui'
+import { Meter, Tooltip } from '@tular/ui'
 import { Icon } from '../design-system'
 import { useInsightFormat } from '../features/insights/format'
 import { useI18n } from './i18n'

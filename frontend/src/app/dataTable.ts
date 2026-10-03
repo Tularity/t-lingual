@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { DataTableLabels, TableDensity } from '@t-lingual/ui'
+import type { DataTableLabels, TableDensity } from '@tular/ui'
 import { readBrowserStorage, writeBrowserStorage } from '../platform/storage'
 import { useI18n } from './i18n'
 

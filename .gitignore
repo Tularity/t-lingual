@@ -4,13 +4,10 @@
 /node_modules/
 /frontend/dist/
 /frontend/node_modules/
-/frontend/ui-framework/dist/
-/frontend/ui-framework/node_modules/
 /coverage/
 *.out
 
-# The component lab is a local authoring surface for the design system, not a
-# shipped artifact. It is regenerated on demand and never versioned.
+# Local tooling: screenshots, films and one-off scripts. Never versioned.
 /frontend/lab/
 
 # Local configuration and secrets

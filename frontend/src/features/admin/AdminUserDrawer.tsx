@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Drawer, DrawerBody, DrawerDescription, DrawerHeader, DrawerTitle, Select as PlainSelect, SelectOption as PlainOption } from '@t-lingual/ui'
+import { Drawer, DrawerBody, DrawerDescription, DrawerHeader, DrawerTitle, Select as PlainSelect, SelectOption as PlainOption } from '@tular/ui'
 import { api } from '../../api/client'
 import type { AdminUserDetail, LimitOverrides, User, UserLimits, UserSettings } from '../../api/contracts'
 import { adminChange, type AdminChangeKind } from '../../app/adminChanges'

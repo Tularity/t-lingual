@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { Popover } from '@t-lingual/ui'
+import { Popover } from '@tular/ui'
 import { Button, Icon } from '../../design-system'
 import { useI18n } from './index'
 import { localeAvailable } from './catalogs'

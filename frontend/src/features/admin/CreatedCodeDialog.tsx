@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { copyTextToClipboard } from '@t-lingual/ui'
+import { copyTextToClipboard } from '@tular/ui'
 import type { Invitation } from '../../api/contracts'
 import { Button, Dialog, useToast } from '../../design-system'
 import { useI18n } from '../../app/i18n'

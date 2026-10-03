@@ -108,7 +108,12 @@ describe('application shell navigation', () => {
     const user = userEvent.setup()
     renderShell()
     await user.click(within(document.querySelector('.app-sidebar') as HTMLElement).getByRole('button', { name: 'Workspace guide' }))
-    expect(await screen.findByRole('dialog', { name: 'A little help, right here' })).toBeInTheDocument()
+    const guide = await screen.findByRole('dialog', { name: 'A little help, right here' })
+    // The source repository opens in a tab of its own, without a handle back to this page.
+    const source = within(guide).getByRole('link', { name: 'GitHub' })
+    expect(source).toHaveAttribute('href', 'https://github.com/Tularity/t-lingual')
+    expect(source).toHaveAttribute('target', '_blank')
+    expect(source.getAttribute('rel')).toContain('noopener')
   })
   it('moves focus to main content after drawer navigation', async () => {
     const user = userEvent.setup()

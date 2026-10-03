@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LanguageSelect } from './index'
-import { Dialog, DialogHeader, DialogTitle, DialogBody } from '@t-lingual/ui'
+import { Dialog, DialogHeader, DialogTitle, DialogBody } from '@tular/ui'
 
 const choices = [
   { code: 'en', label: 'English', native: 'English' },

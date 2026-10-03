@@ -61,6 +61,8 @@
 .tl-drawer .app-sidebar__footer { padding-top:0; border:0; }
 .offline-banner { position:fixed; z-index:45; top:12px; left:calc(var(--sidebar-width) / 2 + 50%); display:flex; max-width:min(560px,calc(100vw - var(--sidebar-width) - 40px)); gap:8px; align-items:center; padding:10px 14px; border:1px solid var(--tl-warning-border); border-radius:8px; color:var(--color-warning); background:var(--color-warning-soft); box-shadow:var(--shadow-sm); font-size:12px; transform:translateX(-50%); }
 .workspace-guide { display:grid; gap:23px; }
+/* The source link keeps to the left of the guide's own actions. */
+.workspace-guide__source { margin-inline-end:auto; gap:8px; }
 .workspace-guide > div { display:flex; gap:16px; }
 .workspace-guide > div > span { flex:none; font:12px var(--font-mono); color:var(--color-brown); padding-top:3px; }
 .workspace-guide h3 { margin:0 0 6px; font-size:14px; font-weight:600; }

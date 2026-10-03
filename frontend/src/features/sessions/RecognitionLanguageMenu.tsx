@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Menu, MenuCheckboxItem, MenuItem, MenuSeparator, Icon } from '@t-lingual/ui'
+import { Menu, MenuCheckboxItem, MenuItem, MenuSeparator, Icon } from '@tular/ui'
 import { useI18n } from '../../app/i18n'
 import { errorMessage } from '../../app/utils'
 import { LanguageLabel, languageDisplayName, languageFlag } from '../languages'

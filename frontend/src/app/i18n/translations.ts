@@ -1119,5 +1119,6 @@ export const translations: Record<string, string> = {
   "Catching up on held-up audio · audio still saved": "正在补齐延迟的音频 · 音频照常保存",
   "Catching up: audio held up by the connection is saved first and recognized in its place in a moment. Recording goes on, and live captions return shortly.": "正在补齐：因连接延迟的音频已先保存，稍后会在原位置识别。录制仍在继续，实时字幕很快恢复。",
   "Microphone paused": "麦克风已暂停",
+  "Source code on GitHub": "GitHub 上的源代码",
   ...sessionChinese,
 }

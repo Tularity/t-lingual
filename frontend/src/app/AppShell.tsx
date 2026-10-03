@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { Avatar, Drawer, DrawerHeader, DrawerTitle, DrawerBody, DrawerFooter, Icon as UIIcon, irisTransition } from '@t-lingual/ui'
-import { Button, Dialog, Icon, useTheme, useToast } from '../design-system'
+import { Avatar, Drawer, DrawerHeader, DrawerTitle, DrawerBody, DrawerFooter, Icon as UIIcon, irisTransition } from '@tular/ui'
+import { Button, Dialog, GitHubMark, Icon, buttonClassName, useTheme, useToast } from '../design-system'
 import { useI18n } from './i18n'
 import { InterfaceLanguageMenu } from './i18n/InterfaceLanguageMenu'
 import type { IconName } from '../design-system/icons'
@@ -47,6 +47,13 @@ function ThemeToggle() {
   }
   const label = `${t('Colour theme')}: ${names[mode]}`
   return <Button variant="ghost" iconOnly className="app-preferences__trigger" aria-label={label} title={label} onClick={toggle}><Icon name={mode === 'system' ? 'sunMoon' : mode === 'dark' ? 'moon' : 'sun'} size={18} /></Button>
+}
+/** Where T Lingual's source is kept. */
+export const repositoryUrl = 'https://github.com/Tularity/t-lingual'
+/** The source repository, as an icon beside the interface menus. */
+export function RepositoryLink() {
+  const { t } = useI18n()
+  return <a className={buttonClassName({ variant: 'ghost', iconOnly: true, className: 'app-preferences__trigger' })} href={repositoryUrl} target="_blank" rel="noopener noreferrer" aria-label={t('Source code on GitHub')} title={t('Source code on GitHub')}><GitHubMark size={18} /></a>
 }
 export function InterfaceMenus() {
   return <div className="app-preferences">
@@ -159,7 +166,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     {!online && <div className="offline-banner" role="status"><Icon name="warning" size={17} />{t("You’re offline. Live audio and changes cannot sync until the connection returns.")}</div>}
     <main ref={mainRef} id="main-content" className="app-main" tabIndex={-1}><div key={page.key} className="app-page" style={{ '--_dir': page.direction } as CSSProperties}>{children}</div></main>
     <WorkspaceDialog open={creatingWorkspace} onClose={() => setCreatingWorkspace(false)} onSaved={(created) => navigate(`/workspaces/${created.id}`)} />
-    <Dialog open={helpOpen} title={t("A little help, right here")} description={t("From the first word to the final transcript.")} onClose={() => setHelpOpen(false)} footer={<><Button icon="settings" onClick={()=>{setHelpOpen(false);navigate('/setup')}}>{t('Quick setup')}</Button><Button variant="primary" onClick={() => setHelpOpen(false)}>{t("Got it")}</Button></>}>
+    <Dialog open={helpOpen} title={t("A little help, right here")} description={t("From the first word to the final transcript.")} onClose={() => setHelpOpen(false)} footer={<><a className={buttonClassName({ variant: 'ghost', className: 'workspace-guide__source' })} href={repositoryUrl} target="_blank" rel="noopener noreferrer" title={t('Source code on GitHub')}><GitHubMark size={18} />GitHub</a><Button icon="settings" onClick={()=>{setHelpOpen(false);navigate('/setup')}}>{t('Quick setup')}</Button><Button variant="primary" onClick={() => setHelpOpen(false)}>{t("Got it")}</Button></>}>
       <div className="workspace-guide"><div><span>01</span><section><h3>{t("Set up a conversation")}</h3><p>{t("Create a session, give it a name and choose the languages you need.")}</p></section></div><div><span>02</span><section><h3>{t("Stay in the conversation")}</h3><p>{t("Start interpretation to follow speech and its translation side by side. Pause whenever you need a moment.")}</p></section></div><div><span>03</span><section><h3>{t("Take your words with you")}</h3><p>{t("Stop recording to save your words. Continue the same session whenever you need. Search, copy or export the transcript whenever you need it.")}</p></section></div>{demo && <aside><strong>{t("You’re exploring the demo")}</strong><p>{t("Audio and passkey ceremonies are simulated. Sample conversations stream automatically; your changes stay in this browser. No microphone is recorded.")}</p></aside>}</div>
     </Dialog>
   </div></AccountStorageProvider>

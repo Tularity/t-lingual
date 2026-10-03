@@ -1,6 +1,6 @@
 import { useI18n } from '../../app/i18n'
 import { useEffect, useState } from 'react'
-import { AvatarGroup, Menu, MenuGroup, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '@t-lingual/ui'
+import { AvatarGroup, Menu, MenuGroup, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '@tular/ui'
 import { api } from '../../api/client'
 import type { Person, SessionShare } from '../../api/contracts'
 import { useOptionalAuth } from '../../app/auth'

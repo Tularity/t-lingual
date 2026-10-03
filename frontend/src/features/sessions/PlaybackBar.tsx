@@ -1,5 +1,5 @@
 import { useCallback, useEffect, type CSSProperties, type ReactNode } from 'react'
-import { Select, SelectOption } from '@t-lingual/ui'
+import { Select, SelectOption } from '@tular/ui'
 import { Button, Icon } from '../../design-system'
 import { useI18n } from '../../app/i18n'
 import { audioTimestamp } from './SessionTransport'

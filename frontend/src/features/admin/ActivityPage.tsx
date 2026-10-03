@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { DataTable, Select, SelectOption, type DataTableColumn } from '@t-lingual/ui'
+import { DataTable, Select, SelectOption, type DataTableColumn } from '@tular/ui'
 import type { AuditEvent } from '../../api/contracts'
 import { Button, Card, EmptyState, Icon, Input, LoadingState } from '../../design-system'
 import { useDataTableLabels, useTablePreferences } from '../../app/dataTable'

@@ -3,10 +3,7 @@
 FROM --platform=$BUILDPLATFORM node:24.20.0-alpine3.24@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS web-build
 WORKDIR /src/frontend
 
-# The workspace manifests must land before `npm ci`, or the install fails
-# resolving the `ui-framework` workspace the lockfile references.
 COPY frontend/package.json frontend/package-lock.json ./
-COPY frontend/ui-framework/package.json ./ui-framework/
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --ignore-scripts --no-audit --no-fund
 

@@ -1,7 +1,7 @@
 import {useCallback,useEffect} from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Button, Icon } from '../../design-system'
-import { SegmentedControl, Select, SelectOption } from '@t-lingual/ui'
+import { SegmentedControl, Select, SelectOption } from '@tular/ui'
 import { useI18n } from '../../app/i18n'
 import type { SessionPlayer } from './useSessionAudio'
 import './transport.css'

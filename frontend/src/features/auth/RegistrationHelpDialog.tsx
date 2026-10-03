@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Markdown } from '@t-lingual/ui'
+import { Markdown } from '@tular/ui'
 import { api } from '../../api/client'
 import { useI18n } from '../../app/i18n'
 import { errorMessage } from '../../app/utils'

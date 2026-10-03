@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SegmentedControl, Select, SelectOption } from '@t-lingual/ui'
+import { SegmentedControl, Select, SelectOption } from '@tular/ui'
 import { api } from '../../api/client'
 import type { AccountUsage } from '../../api/contracts'
 import { Button, Card, EmptyState, LoadingState } from '../../design-system'

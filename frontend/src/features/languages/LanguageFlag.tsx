@@ -1,6 +1,6 @@
 import {useI18n} from '../../app/i18n'
 import { useState } from 'react'
-import { Tooltip } from '@t-lingual/ui'
+import { Tooltip } from '@tular/ui'
 import { LanguageLabel, languageFlag, languageDisplayName } from './LanguageLabel'
 
 /** Compact language display with the full name available by pointer or keyboard. */

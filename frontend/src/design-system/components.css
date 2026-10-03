@@ -1,4 +1,4 @@
-/* Feature adapters only. Visual primitives are provided by @t-lingual/ui. */
+/* Feature adapters only. Visual primitives are provided by @tular/ui. */
 .ds-page-header { margin-bottom: 28px; }
 .ds-page-header .tl-page-header__title { font-size: clamp(28px, 3vw, 38px); letter-spacing: -.04em; }
 .ds-card--interactive { transition: border-color 180ms, box-shadow 180ms; }
